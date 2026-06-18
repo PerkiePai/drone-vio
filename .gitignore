@@ -1,0 +1,14 @@
+# Third-party cloned repo (has its own git history + downloaded weights)
+SuperGluePretrainedNetwork/
+
+# Input media and extracted frames
+_in/
+_out/
+
+# Reference screenshots
+image.png
+
+# Python
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
