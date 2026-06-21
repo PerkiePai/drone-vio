@@ -121,26 +121,80 @@ def run_lightglue(extractor, matcher, g0, g1, device):
     return mkpts0, mkpts1, len(kpts0), len(kpts1), ms
 
 
+def run_xfeat(xf, g0, g1, device, min_cossim=-1):
+    """XFeat is detector+matcher in one; we time the FULL pipeline (not just
+    the MNN step), since it has no SuperPoint front-end to share.
+    min_cossim=-1 keeps all mutual matches; 0.82 is XFeat's own precision
+    threshold that filters weak descriptor pairs."""
+    def to_inp(g):
+        return torch.from_numpy(g).float()[None, None].to(device) / 255.0
+    i0, i1 = to_inp(g0), to_inp(g1)
+
+    def pipeline():
+        o0 = xf.detectAndCompute(i0, top_k=MAX_KPTS)[0]
+        o1 = xf.detectAndCompute(i1, top_k=MAX_KPTS)[0]
+        idx0, idx1 = xf.match(o0["descriptors"], o1["descriptors"],
+                              min_cossim=min_cossim)
+        return o0, o1, idx0, idx1
+
+    with torch.no_grad():
+        (o0, o1, idx0, idx1), ms = timed(pipeline)
+    kpts0 = o0["keypoints"].cpu().numpy()
+    kpts1 = o1["keypoints"].cpu().numpy()
+    mkpts0 = kpts0[idx0.cpu().numpy()]
+    mkpts1 = kpts1[idx1.cpu().numpy()]
+    return mkpts0, mkpts1, len(kpts0), len(kpts1), ms
+
+
+def run_xfeat_lighterglue(xf, g0, g1, device):
+    """XFeat detector + LighterGlue (a distilled LightGlue trained for XFeat's
+    64-d descriptors) -- the learned-matcher replacement for plain MNN. Timed
+    as full pipeline, same as the other XFeat rows."""
+    def to_inp(g):
+        return torch.from_numpy(g).float()[None, None].to(device) / 255.0
+    i0, i1 = to_inp(g0), to_inp(g1)
+
+    def pipeline():
+        o0 = xf.detectAndCompute(i0, top_k=MAX_KPTS)[0]
+        o1 = xf.detectAndCompute(i1, top_k=MAX_KPTS)[0]
+        o0["image_size"] = (W, H)
+        o1["image_size"] = (W, H)
+        mk0, mk1, _ = xf.match_lighterglue(o0, o1)
+        return o0, o1, mk0, mk1
+
+    with torch.no_grad():
+        (o0, o1, mk0, mk1), ms = timed(pipeline)
+    return mk0, mk1, len(o0["keypoints"]), len(o1["keypoints"]), ms
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--stem", default="bev-forest")
     ap.add_argument("--ref", type=int, default=0, help="reference second")
     ap.add_argument("--gaps", type=int, nargs="+", default=[1, 3, 6, 12])
     ap.add_argument("--weights", default="outdoor", choices=["indoor", "outdoor"])
+    ap.add_argument("--detection_threshold", type=float, default=0.005,
+                    help="SuperPoint keypoint score threshold, applied to BOTH "
+                         "front-ends so the matcher is the only variable")
     args = ap.parse_args()
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    print(f"Device: {device}   front-end: SuperPoint(max {MAX_KPTS})   "
-          f"input: {W}x{H}\n")
+    print(f"Device: {device}   front-end: SuperPoint(max {MAX_KPTS}, "
+          f"thr {args.detection_threshold})   input: {W}x{H}\n")
 
     sg = Matching({
-        "superpoint": {"nms_radius": 4, "keypoint_threshold": 0.005,
+        "superpoint": {"nms_radius": 4,
+                       "keypoint_threshold": args.detection_threshold,
                        "max_keypoints": MAX_KPTS},
         "superglue": {"weights": args.weights, "sinkhorn_iterations": 20,
                       "match_threshold": 0.2},
     }).eval().to(device)
-    lg_ext = SuperPoint(max_num_keypoints=MAX_KPTS).eval().to(device)
+    lg_ext = SuperPoint(max_num_keypoints=MAX_KPTS,
+                        detection_threshold=args.detection_threshold,
+                        nms_radius=4).eval().to(device)
     lg_match = LightGlue(features="superpoint").eval().to(device)
+    xf = torch.hub.load("verlab/accelerated_features", "XFeat",
+                        pretrained=True, top_k=MAX_KPTS, trust_repo=True)
 
     g_ref = load_gray(os.path.join(IN_DIR, f"{args.stem}_{args.ref:04d}s.jpg"))
 
@@ -161,7 +215,13 @@ def main():
         for name, fn in (("SuperGlue",
                           lambda: run_superglue(sg, g_ref, g1, device)),
                          ("LightGlue",
-                          lambda: run_lightglue(lg_ext, lg_match, g_ref, g1, device))):
+                          lambda: run_lightglue(lg_ext, lg_match, g_ref, g1, device)),
+                         ("XFeat*",
+                          lambda: run_xfeat(xf, g_ref, g1, device, min_cossim=-1)),
+                         ("XFeat*.82",
+                          lambda: run_xfeat(xf, g_ref, g1, device, min_cossim=0.82)),
+                         ("XFeat+LG*",
+                          lambda: run_xfeat_lighterglue(xf, g_ref, g1, device))):
             mk0, mk1, nk0, nk1, ms = fn()
             geo = geometry(mk0, mk1)
             print(f"{pair:>10} {name:>10} {nk0:>4}:{nk1:<4} {len(mk0):>6} "
@@ -176,11 +236,15 @@ def main():
         print()
 
     os.makedirs(OUT_DIR, exist_ok=True)
-    csv_path = os.path.join(OUT_DIR, "comparison.csv")
+    csv_path = os.path.join(OUT_DIR, f"comparison_{args.stem}.csv")
     with open(csv_path, "w", newline="") as f:
         wtr = csv.DictWriter(f, fieldnames=list(rows[0].keys()))
         wtr.writeheader()
         wtr.writerows(rows)
+    print("\n* SuperGlue/LightGlue 'ms' is matcher-only (shared SuperPoint "
+          "keypoints).\n  XFeat* 'ms' is the full detect+describe+match "
+          "pipeline and uses its OWN detector,\n  so its kpts/matches are not "
+          "drawn from the same points as the other two.")
     print(f"Saved: {csv_path}")
 
 

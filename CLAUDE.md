@@ -36,7 +36,10 @@ conda run -n car-detection python superglue/superglue_match.py --img0 a.jpg --im
 # 3. LightGlue match — identical CLI to the SuperGlue script
 conda run -n car-detection python lightglue/lightglue_match.py --n 0 --m 1
 
-# 4. Fair head-to-head harness across frame gaps -> table + compare/_out/comparison.csv
+# 4. XFeat match — same CLI plus --top_k / --min_cossim
+conda run -n car-detection python xfeat/xfeat_match.py --n 0 --m 1
+
+# 5. Three-way harness across frame gaps -> table + compare/_out/comparison.csv
 conda run -n car-detection python compare/compare_matchers.py --gaps 1 3 6 12
 ```
 
@@ -47,6 +50,8 @@ conda run -n car-detection python compare/compare_matchers.py --gaps 1 3 6 12
 - `lightglue/` — `lightglue_match.py`, outputs in `_out/`. NOTE: this directory
   holds *our* script; the LightGlue *model* is the pip-installed `lightglue`
   package, not vendored here.
+- `xfeat/` — `xfeat_match.py`, outputs in `_out/`. XFeat is loaded via
+  `torch.hub.load("verlab/accelerated_features", ...)` (cached); no clone here.
 - `compare/` — `compare_matchers.py` and `_out/comparison.csv`.
 - `SuperGluePretrainedNetwork/` — upstream magicleap clone (has its own `.git`).
   **Gitignored**, but must exist on disk: the SuperGlue scripts and the compare
@@ -67,8 +72,24 @@ padded second index). The match scripts' `--stem/--n/--m` interface rebuilds
 those paths via `frame_path()`. This naming is the coupling between extraction
 and matching; keep it consistent.
 
-**Mirrored match scripts.** `superglue_match.py` and `lightglue_match.py`
-deliberately share the same CLI (`--stem/--n/--m`, `--img0/--img1`,
+**XFeat is a different paradigm.** Unlike the other two, XFeat is NOT
+SuperPoint-based: one lightweight CNN does detection + 64-d description, matched
+by mutual nearest-neighbour. It therefore cannot share the SuperPoint front-end
+and is compared as a *whole pipeline*. In `compare_matchers.py` its `ms` column
+is the full detect+match time (labeled `XFeat*`), whereas SuperGlue/LightGlue
+`ms` is matcher-only on shared keypoints — do not read them as like-for-like.
+On this repetitive-canopy footage XFeat's MNN matcher (run with `min_cossim=-1`,
+keeping all mutual matches) yields many low-confidence matches and a much lower
+RANSAC inlier ratio than the learned matchers; raising `--min_cossim` trades
+matches for precision. The harness runs five rows: SuperGlue, LightGlue, XFeat*
+(MNN, all matches), XFeat*.82 (MNN, 0.82 cossim filter), and XFeat+LG* (XFeat
+detector + LighterGlue, a learned matcher for XFeat's 64-d descriptors). The
+LighterGlue variant roughly 2-5x's XFeat's inlier ratio and is best on the
+hardest/fastest footage — confirming XFeat's weakness was the MNN matcher, not
+its descriptors. Results are written per-stem to `compare/_out/comparison_<stem>.csv`.
+
+**Mirrored match scripts.** `superglue_match.py`, `lightglue_match.py`, and
+`xfeat_match.py` deliberately share the same CLI (`--stem/--n/--m`, `--img0/--img1`,
 `--max_keypoints`), the same confidence→`cm.jet` line coloring (red=low,
 green/cyan=high, as in the SuperGlue paper figure), and the same side-by-side
 output. When changing one, mirror the other. Gotcha: LightGlue's

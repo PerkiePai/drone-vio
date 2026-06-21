@@ -3,7 +3,9 @@ import os
 import glob
 import cv2
 
-IN_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "_in")
+# _in lives at the project root, one level up from this script's dir.
+PROJECT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+IN_DIR = os.path.join(PROJECT, "_in")
 INTERVAL_SEC = 1.0
 
 def capture(video_path):
