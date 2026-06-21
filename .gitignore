@@ -3,7 +3,7 @@ SuperGluePretrainedNetwork/
 
 # Input media and extracted frames
 _in/
-_out/
+_out*/
 _result/
 
 # Reference screenshots
@@ -16,4 +16,4 @@ __pycache__/
 
 # Cloned OpenVINS repo (has its own git history; re-clone per backend README)
 backend/openvins/open_vins/
-_frames/
+_frames*/
