@@ -73,9 +73,15 @@ backend/openvins/accuracy_sweep.sh          # try many configs, report ATE
 
 **Result summary:** monocular VIO **fails on MARS-LVIG AMvalley** (km-scale drift —
 high-altitude nadir is low-parallax, scale unobservable; it's a LiDAR-inertial dataset)
-but **works on TUM-VI room1** (ATE 6.8 cm). See `backend/openvins/README.md` →
-*Results*. Gotchas found: Livox accel is in **g** (`imu_g_to_si.py`), and `rosrun`
-needs `__name:=ov_msckf` or topics land under the wrong namespace.
+but **works on TUM-VI room1** (ATE ~5 cm). See `backend/openvins/README.md` → *Results*.
+Gotchas found: Livox accel is in **g** (`imu_g_to_si.py`), and `rosrun` needs
+`__name:=ov_msckf` or topics land under the wrong namespace.
+
+**Accuracy note (important methodology):** single-run TUM-VI ATE is **non-deterministic**
+(±~1.5 cm from realtime frame drops). A 9-config sweep showed an apparent best of 4.0 cm,
+but repeat-running 3× each (`repeat_eval.sh`, 0.5× playback) showed that was noise —
+configs cluster at ~5 cm and tuning doesn't reliably beat baseline. **Always repeat-run
+before claiming a VIO improvement.** Best robust config: `max_clones: 15` + CLAHE (4.6 cm).
 
 ## Layout
 

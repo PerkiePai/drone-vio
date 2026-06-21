@@ -93,6 +93,27 @@ Plot: `_out/tumvi_room1_trajectory.png` (estimate overlays GT). Annotated featur
 video: `_result/tumvi_room1_tracks.mp4`. This is the working, ground-truth-evaluated
 monocular VIO result; AMvalley's divergence is a property of the *data*, not the pipeline.
 
+#### Accuracy investigation — tuning gains were within run-to-run noise
+Tried 9 configs (`accuracy_sweep.sh`: more points/clones/SLAM, CLAHE, ZUPT, stereo),
+then repeat-ran the top mono candidates **3× each at 0.5× playback** (`repeat_eval.sh`)
+because single-run ATE is **non-deterministic** (realtime frame drops):
+
+| config (3-run mean) | ATE pos | note |
+|---|---|---|
+| baseline mono | **5.1 cm** | runs: 4.3 / 6.8 / 4.3 |
+| + max_clones 15 | 5.7 cm | sweep showed 4.0 cm — that was a lucky draw |
+| + max_clones 20 | 5.3 cm | |
+| + max_clones 15 + CLAHE | **4.6 cm** | identical 4.6 across all 3 runs (lowest variance) |
+
+Lessons: (1) **single-run VIO ATE varies ±1.5 cm here — always repeat-run before claiming
+an improvement**; the sweep's apparent "clones15 → 4.0 cm" win evaporated on repetition.
+(2) ~5 cm is the achievable accuracy for monocular OpenVINS on this sequence (consistent
+with published TUM-VI room results), and parameter tuning does not reliably beat it.
+(3) The only robustly-better config is **`max_clones: 15` + `histogram_method: CLAHE`**
+(4.6 cm, low variance) — adopt it, but the bigger takeaway is the measurement noise.
+Stereo scored *worse* in the single sweep (7.1 cm) but wasn't repeat-tested, so that's
+likely noise too — not a real mono-beats-stereo result.
+
 ### Scripts added for this investigation
 - `imu_g_to_si.py` — Livox g→m/s² IMU converter (publishes `/livox/imu_si`).
 - `scan_imu_excitation.py` — find well-excited windows in a bag for dynamic init.
