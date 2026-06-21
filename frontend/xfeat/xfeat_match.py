@@ -19,10 +19,11 @@ import torch
 import matplotlib.cm as cm
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-PROJECT = os.path.dirname(HERE)
-IN_DIR = os.path.join(PROJECT, "_in")
+FRONTEND = os.path.dirname(HERE)                 # holds SuperGluePretrainedNetwork
+ROOT = os.path.dirname(FRONTEND)                 # project root, holds _in
+IN_DIR = os.path.join(ROOT, "_in")
 OUT_DIR = os.path.join(HERE, "_out")
-sys.path.insert(0, os.path.join(PROJECT, "SuperGluePretrainedNetwork"))
+sys.path.insert(0, os.path.join(FRONTEND, "SuperGluePretrainedNetwork"))
 from models.utils import make_matching_plot     # noqa: E402  (shared viz)
 
 W, H = 640, 480

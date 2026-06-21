@@ -3,9 +3,9 @@ import os
 import glob
 import cv2
 
-# _in lives at the project root, one level up from this script's dir.
-PROJECT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-IN_DIR = os.path.join(PROJECT, "_in")
+# _in lives at the project root, two levels up (frontend/superglue/ -> root).
+ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+IN_DIR = os.path.join(ROOT, "_in")
 INTERVAL_SEC = 1.0
 
 def capture(video_path):

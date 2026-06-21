@@ -26,10 +26,12 @@ import numpy as np
 import cv2
 import torch
 
-PROJECT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-IN_DIR = os.path.join(PROJECT, "_in")
-OUT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "_out")
-SG_REPO = os.path.join(PROJECT, "SuperGluePretrainedNetwork")
+HERE = os.path.dirname(os.path.abspath(__file__))
+FRONTEND = os.path.dirname(HERE)            # holds SuperGluePretrainedNetwork
+ROOT = os.path.dirname(FRONTEND)            # project root, holds _in
+IN_DIR = os.path.join(ROOT, "_in")
+OUT_DIR = os.path.join(HERE, "_out")
+SG_REPO = os.path.join(FRONTEND, "SuperGluePretrainedNetwork")
 sys.path.insert(0, SG_REPO)
 
 from models.matching import Matching          # noqa: E402  (SuperGlue)

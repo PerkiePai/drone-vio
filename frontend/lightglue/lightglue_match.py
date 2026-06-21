@@ -19,8 +19,8 @@ from lightglue.utils import load_image, rbd
 from lightglue import viz2d
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-PROJECT = os.path.dirname(HERE)
-IN_DIR = os.path.join(PROJECT, "_in")
+ROOT = os.path.dirname(os.path.dirname(HERE))   # frontend/lightglue/ -> root
+IN_DIR = os.path.join(ROOT, "_in")
 OUT_DIR = os.path.join(HERE, "_out")
 
 

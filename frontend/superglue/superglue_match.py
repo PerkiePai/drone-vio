@@ -10,16 +10,18 @@ import numpy as np
 import torch
 import matplotlib.cm as cm
 
+HERE = os.path.dirname(os.path.abspath(__file__))
+FRONTEND = os.path.dirname(HERE)            # holds SuperGluePretrainedNetwork
+ROOT = os.path.dirname(FRONTEND)            # project root, holds _in
+
 # Make the cloned repo importable
-REPO = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                    "SuperGluePretrainedNetwork")
-sys.path.insert(0, REPO)
+sys.path.insert(0, os.path.join(FRONTEND, "SuperGluePretrainedNetwork"))
 
 from models.matching import Matching          # noqa: E402
 from models.utils import read_image, make_matching_plot  # noqa: E402
 
-IN_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "_in")
-OUT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "_out")
+IN_DIR = os.path.join(ROOT, "_in")
+OUT_DIR = os.path.join(HERE, "_out")
 
 
 def frame_path(stem, sec):

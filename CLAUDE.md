@@ -27,33 +27,38 @@ harmless `torch.load` FutureWarnings the SuperGlue weights emit.
 
 ```bash
 # 1. Extract one frame per second from every video in _in/ back into _in/
-conda run -n car-detection python superglue/capture_frames.py
+conda run -n car-detection python frontend/superglue/capture_frames.py
 
 # 2. SuperGlue match — by second index, or by explicit image paths
-conda run -n car-detection python superglue/superglue_match.py --n 0 --m 6
-conda run -n car-detection python superglue/superglue_match.py --img0 a.jpg --img1 b.jpg
+conda run -n car-detection python frontend/superglue/superglue_match.py --n 0 --m 6
+conda run -n car-detection python frontend/superglue/superglue_match.py --img0 a.jpg --img1 b.jpg
 
 # 3. LightGlue match — identical CLI to the SuperGlue script
-conda run -n car-detection python lightglue/lightglue_match.py --n 0 --m 1
+conda run -n car-detection python frontend/lightglue/lightglue_match.py --n 0 --m 1
 
 # 4. XFeat match — same CLI plus --top_k / --min_cossim
-conda run -n car-detection python xfeat/xfeat_match.py --n 0 --m 1
+conda run -n car-detection python frontend/xfeat/xfeat_match.py --n 0 --m 1
 
-# 5. Three-way harness across frame gaps -> table + compare/_out/comparison.csv
-conda run -n car-detection python compare/compare_matchers.py --gaps 1 3 6 12
+# 5. Comparison harness across frame gaps -> table + compare/_out/comparison_<stem>.csv
+conda run -n car-detection python frontend/compare/compare_matchers.py --gaps 1 3 6 12
 ```
 
 ## Layout
 
-- `_in/` — shared inputs: source `*.mp4` plus extracted frames. **Gitignored.**
-- `superglue/` — `capture_frames.py`, `superglue_match.py`, outputs in `_out/`.
-- `lightglue/` — `lightglue_match.py`, outputs in `_out/`. NOTE: this directory
-  holds *our* script; the LightGlue *model* is the pip-installed `lightglue`
-  package, not vendored here.
-- `xfeat/` — `xfeat_match.py`, outputs in `_out/`. XFeat is loaded via
+All matcher code lives under `frontend/`; `_in/` (shared data) stays at the
+project root. Scripts resolve `_in` via `ROOT` (two levels up from a
+`frontend/<sub>/` script) and the SuperGlue repo via `FRONTEND` (one level up).
+
+- `_in/` — shared inputs at the project root: source `*.mp4` plus extracted
+  frames. **Gitignored.**
+- `frontend/superglue/` — `capture_frames.py`, `superglue_match.py`, `_out/`.
+- `frontend/lightglue/` — `lightglue_match.py`, `_out/`. NOTE: this dir holds
+  *our* script; the LightGlue *model* is the pip-installed `lightglue` package,
+  not vendored here.
+- `frontend/xfeat/` — `xfeat_match.py`, `_out/`. XFeat is loaded via
   `torch.hub.load("verlab/accelerated_features", ...)` (cached); no clone here.
-- `compare/` — `compare_matchers.py` and `_out/comparison.csv`.
-- `SuperGluePretrainedNetwork/` — upstream magicleap clone (has its own `.git`).
+- `frontend/compare/` — `compare_matchers.py` and `_out/comparison_<stem>.csv`.
+- `frontend/SuperGluePretrainedNetwork/` — upstream magicleap clone.
   **Gitignored**, but must exist on disk: the SuperGlue scripts and the compare
   harness `sys.path.insert` it and import `models.matching` / `models.utils`.
 - All `_out/` dirs and `_in/` are gitignored; only the scripts are tracked.
