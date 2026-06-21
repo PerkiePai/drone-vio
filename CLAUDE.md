@@ -81,12 +81,23 @@ is the full detect+match time (labeled `XFeat*`), whereas SuperGlue/LightGlue
 On this repetitive-canopy footage XFeat's MNN matcher (run with `min_cossim=-1`,
 keeping all mutual matches) yields many low-confidence matches and a much lower
 RANSAC inlier ratio than the learned matchers; raising `--min_cossim` trades
-matches for precision. The harness runs five rows: SuperGlue, LightGlue, XFeat*
-(MNN, all matches), XFeat*.82 (MNN, 0.82 cossim filter), and XFeat+LG* (XFeat
-detector + LighterGlue, a learned matcher for XFeat's 64-d descriptors). The
-LighterGlue variant roughly 2-5x's XFeat's inlier ratio and is best on the
-hardest/fastest footage — confirming XFeat's weakness was the MNN matcher, not
-its descriptors. Results are written per-stem to `compare/_out/comparison_<stem>.csv`.
+matches for precision. The harness runs six rows: SuperGlue, LightGlue, XFeat*
+(MNN, all matches), XFeat*.82 (MNN, 0.82 cossim filter), XFeat+LG* (XFeat
+detector + LighterGlue, a learned matcher for XFeat's 64-d descriptors), and
+XFeat+LGdyn (adaptive). The LighterGlue variant roughly 2-5x's XFeat's inlier
+ratio and is best on the hardest/fastest footage — confirming XFeat's weakness
+was the MNN matcher, not its descriptors. Results are written per-stem to
+`compare/_out/comparison_<stem>.csv`.
+
+**Adaptive confidence for VIO survival (XFeat+LGdyn).** Static LighterGlue uses
+`min_conf=0.1`, which is great for precision but can starve at extreme baseline
+(e.g. bev-forest 0->12 dropped to 1 match -> dead track). The XFeat+LGdyn row
+matches at 0.1, and only if the count falls below `--vio_min_points` (default
+15, the factor-graph minimum) does it re-match at 0.02 to recover enough points
+to keep the VIO alive. On clean footage it never triggers (identical to static,
+no cost); when it steps the printed row is annotated `conf=0.02  <-stepped` and
+its `ms` reflects the second match call. It is the only matcher here that never
+catastrophically failed.
 
 **Mirrored match scripts.** `superglue_match.py`, `lightglue_match.py`, and
 `xfeat_match.py` deliberately share the same CLI (`--stem/--n/--m`, `--img0/--img1`,

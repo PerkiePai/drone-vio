@@ -167,6 +167,35 @@ def run_xfeat_lighterglue(xf, g0, g1, device):
     return mk0, mk1, len(o0["keypoints"]), len(o1["keypoints"]), ms
 
 
+def run_xfeat_lighterglue_dyn(xf, g0, g1, device,
+                              min_points=15, conf_hi=0.1, conf_lo=0.02):
+    """Adaptive confidence for VIO survival: match at conf_hi for clean
+    tracking, but if the match count drops below the factor-graph minimum,
+    step down to conf_lo to recover enough points to stay alive through a bad
+    clip. Returns the usual 5-tuple plus a note saying which threshold was used."""
+    def to_inp(g):
+        return torch.from_numpy(g).float()[None, None].to(device) / 255.0
+    i0, i1 = to_inp(g0), to_inp(g1)
+    used = {"conf": conf_hi, "stepped": False}
+
+    def pipeline():
+        o0 = xf.detectAndCompute(i0, top_k=MAX_KPTS)[0]
+        o1 = xf.detectAndCompute(i1, top_k=MAX_KPTS)[0]
+        o0["image_size"] = (W, H)
+        o1["image_size"] = (W, H)
+        mk0, mk1, _ = xf.match_lighterglue(o0, o1, min_conf=conf_hi)
+        used["conf"], used["stepped"] = conf_hi, False
+        if len(mk0) < min_points:
+            mk0, mk1, _ = xf.match_lighterglue(o0, o1, min_conf=conf_lo)
+            used["conf"], used["stepped"] = conf_lo, True
+        return o0, o1, mk0, mk1
+
+    with torch.no_grad():
+        (o0, o1, mk0, mk1), ms = timed(pipeline)
+    note = f"conf={used['conf']:.2f}" + ("  <-stepped" if used["stepped"] else "")
+    return mk0, mk1, len(o0["keypoints"]), len(o1["keypoints"]), ms, note
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--stem", default="bev-forest")
@@ -176,6 +205,9 @@ def main():
     ap.add_argument("--detection_threshold", type=float, default=0.005,
                     help="SuperPoint keypoint score threshold, applied to BOTH "
                          "front-ends so the matcher is the only variable")
+    ap.add_argument("--vio_min_points", type=int, default=15,
+                    help="factor-graph minimum; XFeat+LGdyn steps conf down "
+                         "(0.1->0.02) when matches fall below this")
     args = ap.parse_args()
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -221,17 +253,24 @@ def main():
                          ("XFeat*.82",
                           lambda: run_xfeat(xf, g_ref, g1, device, min_cossim=0.82)),
                          ("XFeat+LG*",
-                          lambda: run_xfeat_lighterglue(xf, g_ref, g1, device))):
-            mk0, mk1, nk0, nk1, ms = fn()
+                          lambda: run_xfeat_lighterglue(xf, g_ref, g1, device)),
+                         ("XFeat+LGdyn",
+                          lambda: run_xfeat_lighterglue_dyn(
+                              xf, g_ref, g1, device,
+                              min_points=args.vio_min_points))):
+            res = fn()
+            mk0, mk1, nk0, nk1, ms = res[:5]
+            note = res[5] if len(res) > 5 else ""
             geo = geometry(mk0, mk1)
-            print(f"{pair:>10} {name:>10} {nk0:>4}:{nk1:<4} {len(mk0):>6} "
+            print(f"{pair:>10} {name:>11} {nk0:>4}:{nk1:<4} {len(mk0):>6} "
                   f"{geo['inliers']:>5} {geo['inlier_ratio']*100:>5.1f}% "
-                  f"{geo['rot_deg']:>6.1f} {ms:>7.1f}")
+                  f"{geo['rot_deg']:>6.1f} {ms:>7.1f}  {note}")
             rows.append({
                 "pair": pair, "model": name, "kpts0": nk0, "kpts1": nk1,
                 "matches": len(mk0), "inliers": geo["inliers"],
                 "inlier_ratio": round(geo["inlier_ratio"], 4),
                 "rot_deg": round(geo["rot_deg"], 2), "match_ms": round(ms, 2),
+                "note": note,
             })
         print()
 
