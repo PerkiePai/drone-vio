@@ -39,8 +39,12 @@ conda run -n car-detection python frontend/lightglue/lightglue_match.py --n 0 --
 # 4. XFeat match — same CLI plus --top_k / --min_cossim
 conda run -n car-detection python frontend/xfeat/xfeat_match.py --n 0 --m 1
 
-# 5. Comparison harness across frame gaps -> table + compare/_out/comparison_<stem>.csv
+# 5. Matcher comparison across frame gaps -> table + compare/_out/comparison_<stem>.csv
 conda run -n car-detection python frontend/compare/compare_matchers.py --gaps 1 3 6 12
+
+# 6. Extractor comparison (SuperPoint/SIFT/DISK/ALIKED under LightGlue)
+#    -> table + compare/_out/extractors_<stem>.csv
+conda run -n car-detection python frontend/compare/compare_extractors.py --gaps 1 3 6 12
 ```
 
 ## Layout
@@ -57,7 +61,9 @@ project root. Scripts resolve `_in` via `ROOT` (two levels up from a
   not vendored here.
 - `frontend/xfeat/` — `xfeat_match.py`, `_out/`. XFeat is loaded via
   `torch.hub.load("verlab/accelerated_features", ...)` (cached); no clone here.
-- `frontend/compare/` — `compare_matchers.py` and `_out/comparison_<stem>.csv`.
+- `frontend/compare/` — `compare_matchers.py` (matcher comparison,
+  `_out/comparison_<stem>.csv`) and `compare_extractors.py` (extractor
+  comparison, `_out/extractors_<stem>.csv`).
 - `frontend/SuperGluePretrainedNetwork/` — upstream magicleap clone.
   **Gitignored**, but must exist on disk: the SuperGlue scripts and the compare
   harness `sys.path.insert` it and import `models.matching` / `models.utils`.
@@ -120,6 +126,19 @@ LightGlue it calls `extractor.extract(img, resize=None)` to suppress internal
 resizing). Latency is warmed-up then averaged. Known remaining unfairness: the
 SuperPoint *detection thresholds* differ (SuperGlue 0.005 → ~600 kpts vs
 LightGlue's lower default → ~1024), so LightGlue starts from more candidates.
+
+**Extractor harness (`compare_extractors.py`).** Fixes the *matcher* (LightGlue)
+and swaps the *front-end* — SuperPoint, SIFT, DISK, ALIKED — each paired with
+its features-matched LightGlue weights (`LightGlue(features=...)`). Feeds all the
+same 640×480 RGB pixels and times extraction vs matching separately (extractor
+speed is the point). First run needs internet to download the DISK/ALIKED/SIFT
+extractor weights and their `*_lightglue` weights into `~/.cache/torch/hub/`
+(SuperPoint is the only one cached by default); afterwards it runs fully offline.
+Findings: ALIKED gives the best inlier ratios on degraded/natural footage at
+moderate cost (~88 ms), SuperPoint is the fastest extractor (~52 ms) but the
+quality floor, DISK peaks on clean short-baseline but is slowest (~150 ms), and
+ALIKED's detector can collapse on a low-texture frame (bev-forest 0→12: 94 kpts
+→ 0 matches) — a tail risk for VIO.
 
 **Geometry without calibration.** This footage has no camera intrinsics, so:
 inlier ratio is computed from a RANSAC **fundamental** matrix (needs no `K`),
