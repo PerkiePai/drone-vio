@@ -1,0 +1,99 @@
+%YAML:1.0 # need to specify the file type at the top!
+# OpenVINS config for MARS-LVIG AMvalley (monocular VIO, IMU + camera only, no GNSS).
+# High-altitude (80-130 m) nadir/downward UAV footage -> low parallax; expect this to be
+# the hard regime. See backend/data/amvalley_calibration.md for the calibration provenance.
+
+verbosity: "INFO"
+
+use_fej: true
+integration: "rk4"
+use_stereo: false       # monocular
+max_cameras: 1
+
+calib_cam_extrinsics: true    # refine cam-IMU extrinsic (ours is composed/approximate)
+calib_cam_intrinsics: true
+calib_cam_timeoffset: true
+calib_imu_intrinsics: false
+calib_imu_g_sensitivity: false
+
+max_clones: 11
+max_slam: 50
+max_slam_in_update: 25
+max_msckf_in_update: 40
+dt_slam_delay: 1
+
+gravity_mag: 9.81
+
+feat_rep_msckf: "GLOBAL_3D"
+feat_rep_slam: "ANCHORED_MSCKF_INVERSE_DEPTH"
+feat_rep_aruco: "ANCHORED_MSCKF_INVERSE_DEPTH"
+
+try_zupt: false
+zupt_chi2_multipler: 0
+zupt_max_velocity: 0.1
+zupt_noise_multiplier: 10
+zupt_max_disparity: 0.5
+zupt_only_at_beginning: false
+
+# ==================================================================
+# Initialization. UAV may already be moving; if static init fails,
+# set init_dyn_use: true (dynamic initialization).
+init_window_time: 2.0
+init_imu_thresh: 1.5
+init_max_disparity: 30.0   # scaled up for 2448px wide images (euroc uses 10 at 752px)
+init_max_features: 75
+
+init_dyn_use: false
+init_dyn_mle_opt_calib: false
+init_dyn_mle_max_iter: 50
+init_dyn_mle_max_time: 0.05
+init_dyn_mle_max_threads: 6
+init_dyn_num_pose: 6
+init_dyn_min_deg: 10.0
+init_dyn_inflation_ori: 10
+init_dyn_inflation_vel: 100
+init_dyn_inflation_bg: 10
+init_dyn_inflation_ba: 100
+init_dyn_min_rec_cond: 1e-12
+init_dyn_bias_g: [ 0.0, 0.0, 0.0 ]
+init_dyn_bias_a: [ 0.0, 0.0, 0.0 ]
+
+# ==================================================================
+record_timing_information: false
+record_timing_filepath: "/tmp/traj_timing.txt"
+
+save_total_state: true
+filepath_est: "/tmp/ov_estimate.txt"
+filepath_std: "/tmp/ov_estimate_std.txt"
+filepath_gt: "/tmp/ov_groundtruth.txt"
+
+# ==================================================================
+# front-end feature tracking
+use_klt: true
+num_pts: 250            # features per frame
+fast_threshold: 20      # lower if forest canopy is low-texture
+grid_x: 5
+grid_y: 5
+min_px_dist: 15         # scaled up for high-res image
+knn_ratio: 0.70
+track_frequency: 11.0   # camera is 10 Hz
+downsample_cameras: false  # full 2448x2048 (10 Hz leaves compute budget)
+num_opencv_threads: 4
+histogram_method: "CLAHE"  # outdoor lighting
+
+use_aruco: false
+num_aruco: 1024
+downsize_aruco: true
+
+# ==================================================================
+up_msckf_sigma_px: 1
+up_msckf_chi2_multipler: 1
+up_slam_sigma_px: 1
+up_slam_chi2_multipler: 1
+up_aruco_sigma_px: 1
+up_aruco_chi2_multipler: 1
+
+use_mask: false
+
+relative_config_imu: "kalibr_imu_chain.yaml"
+relative_config_imucam: "kalibr_imucam_chain.yaml"

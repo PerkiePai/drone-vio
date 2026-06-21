@@ -4,6 +4,7 @@ SuperGluePretrainedNetwork/
 # Input media and extracted frames
 _in/
 _out/
+_result/
 
 # Reference screenshots
 image.png
@@ -12,3 +13,7 @@ image.png
 __pycache__/
 *.pyc
 .ipynb_checkpoints/
+
+# Cloned OpenVINS repo (has its own git history; re-clone per backend README)
+backend/openvins/open_vins/
+_frames/

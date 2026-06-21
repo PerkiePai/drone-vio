@@ -1,0 +1,20 @@
+%YAML:1.0
+# MARS-LVIG AMvalley — Hikvision CA-050-11UC (mono). See backend/data/amvalley_calibration.md
+# T_imu_cam = [R_CtoI | p_CinI], composed T_imu_lidar * inv(T_cam_lidar).
+# radtan uses 4 coeffs (k1,k2,p1,p2); dataset k3=-0.068564 dropped (OpenVINS limitation).
+
+cam0:
+  T_imu_cam:
+    - [0.0029810117, -0.0050461847, 0.9999806515, 0.0931578923]
+    - [-0.9997203635, 0.0231269329, 0.0030965903, 0.0195505900]
+    - [-0.0231465916, -0.9996994869, -0.0049755157, 0.0280173562]
+    - [0.0, 0.0, 0.0, 1.0]
+  cam_overlaps: []
+  camera_model: pinhole
+  distortion_coeffs: [-0.052, 0.1168, 0.0015, 0.00013]
+  distortion_model: radtan
+  intrinsics: [1453.88, 1452.85, 1182.53, 1045.82] # fu, fv, cu, cv
+  resolution: [2448, 2048]
+  # keep bare (OpenCV YAML keeps trailing #-comments in strings).
+  # decompressed at runtime from /left_camera/image/compressed
+  rostopic: /left_camera/image_raw

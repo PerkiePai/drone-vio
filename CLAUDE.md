@@ -4,10 +4,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Purpose
 
-Feature-matching experiments for drone visual-inertial odometry (VIO). The work
-compares two learned matchers — **SuperGlue** and **LightGlue** — on top-down
-(nadir) aerial drone forest footage, measuring match quality and latency to
-decide what to use in a VIO front-end.
+Drone visual-inertial odometry (VIO), in two parts:
+
+- **`frontend/`** — feature-matching experiments comparing learned matchers
+  (**SuperGlue**, **LightGlue**, **XFeat**) and extractors on top-down (nadir)
+  aerial footage, measuring match quality and latency to decide a VIO front-end.
+- **`backend/`** — a real VIO pipeline: **OpenVINS** (monocular, IMU + camera
+  only, no GNSS) on the **MARS-LVIG** aerial dataset, run in a ROS1-Noetic Docker
+  image. See `backend/openvins/README.md`.
 
 ## Environment
 
@@ -19,9 +23,11 @@ torch. Always invoke through the env:
 conda run -n car-detection python <script> <args>
 ```
 
-Platform is Windows; the shell is PowerShell. When passing native-exe args,
-mind PowerShell quoting (see the tool guidance). `2>$null` is handy to drop the
-harmless `torch.load` FutureWarnings the SuperGlue weights emit.
+The above describes the original Windows/PowerShell setup. On the **Ubuntu 24.04
+box** this repo is now developed on, the `car-detection` env does **not** exist:
+use the **`cv`** conda env (torch 2.12 + CUDA; `pip install` of `lightglue` done)
+for frontend/Python work, and **Docker** (`openvins:noetic`) for the backend.
+`2>$null` (PowerShell) → `2>/dev/null` here.
 
 ## Commands
 
@@ -45,6 +51,20 @@ conda run -n car-detection python frontend/compare/compare_matchers.py --gaps 1 
 # 6. Extractor comparison (SuperPoint/SIFT/DISK/ALIKED under LightGlue)
 #    -> table + compare/_out/extractors_<stem>.csv
 conda run -n car-detection python frontend/compare/compare_extractors.py --gaps 1 3 6 12
+
+# 7. OpenVINS-KLT vs ALIKED+LightGlue tracking on real MARS-LVIG frames
+#    (cv env) -> table + plots + CSV in frontend/openvins-alike-lightglue/_out/
+conda run -n cv python frontend/openvins-alike-lightglue/compare_tracking.py \
+    --scale 0.5 --gaps 1 2 3 5 10 --pairs 25 --surv_T 30 --viz
+```
+
+### Backend (OpenVINS VIO, Docker)
+
+```bash
+# build once; then inspect topics and run (headless or with live viz + mp4)
+docker build -t openvins:noetic -f backend/openvins/Dockerfile backend/openvins
+backend/openvins/inspect_bag.sh
+backend/openvins/run_openvins_viz.sh        # see backend/openvins/README.md
 ```
 
 ## Layout
@@ -54,16 +74,22 @@ project root. Scripts resolve `_in` via `ROOT` (two levels up from a
 `frontend/<sub>/` script) and the vendored SuperGlue repo via `FRONTEND` (one
 level up).
 
-- `_in/` — shared inputs at the project root: source `*.mp4` plus extracted
-  frames. **Gitignored.**
-- `frontend/` — all matcher code (superglue, lightglue, xfeat, compare) plus the
-  vendored `SuperGluePretrainedNetwork/`. See `frontend/CLAUDE.md` for the
-  per-folder layout and the full architecture.
-- All `_out/` dirs and `_in/` are gitignored; only the scripts are tracked.
+- `_in/` — shared inputs at the project root: source `*.mp4`, extracted frames,
+  and the MARS-LVIG `*.bag` under `_in/mars-lvig/`. **Gitignored.**
+- `frontend/` — matcher code (superglue, lightglue, xfeat, compare), the vendored
+  `SuperGluePretrainedNetwork/`, and `openvins-alike-lightglue/` (KLT vs
+  ALIKED+LightGlue front-end comparison). See `frontend/CLAUDE.md`.
+- `backend/` — `data/` (MARS-LVIG provenance: Drive IDs, calibration) and
+  `openvins/` (Dockerfile, run scripts, configs, cloned `open_vins`). See
+  `backend/openvins/README.md`.
+- All `_out/`, `_result/`, `_frames/` dirs and `_in/` are gitignored, as is the
+  cloned `backend/openvins/open_vins/`; only the scripts/configs are tracked.
 
 ## Architecture
 
 The matcher/extractor architecture, the fairness harnesses, the XFeat +
-LighterGlue + adaptive-confidence design, and the geometry-without-calibration
-notes live in **`frontend/CLAUDE.md`** (loaded on demand when working under
-`frontend/`).
+LighterGlue + adaptive-confidence design, the KLT-vs-ALIKED+LightGlue comparison,
+and the geometry-without-calibration notes live in **`frontend/CLAUDE.md`**.
+
+The VIO backend (OpenVINS sensor config, the IMU g→m/s² fix, dynamic-init notes,
+and the live-viz/mp4 pipeline) lives in **`backend/openvins/README.md`**.
