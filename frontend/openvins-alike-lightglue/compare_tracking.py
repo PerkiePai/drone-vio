@@ -222,7 +222,14 @@ def main():
     ap.add_argument("--pairs", type=int, default=30, help="frame pairs per gap")
     ap.add_argument("--surv_T", type=int, default=30, help="survival horizon (frames)")
     ap.add_argument("--viz", action="store_true", help="also save match panels + plots")
+    ap.add_argument("--frames", default=None, help="frames dir (default ./_frames)")
+    ap.add_argument("--out", default=None, help="output dir (default ./_out)")
     args = ap.parse_args()
+
+    global FRAMES, OUT
+    if args.frames: FRAMES = args.frames
+    if args.out: OUT = args.out
+    os.makedirs(OUT, exist_ok=True)
 
     frames = list_frames()
     if len(frames) < 12:

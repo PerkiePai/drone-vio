@@ -98,7 +98,8 @@ ALIKED's detector can collapse on a low-texture frame (bev-forest 0→12: 94 kpt
 
 **KLT vs ALIKED+LightGlue (`openvins-alike-lightglue/`).** Compares the OpenVINS
 *default* front-end (FAST + bidirectional Lucas-Kanade, forward-backward rejected)
-against ALIKED+LightGlue on real AMvalley frames, on VIO-relevant metrics: matches
+against ALIKED+LightGlue on real frames (AMvalley aerial AND TUM-VI handheld via
+`--frames`), on VIO-relevant metrics: matches
 + RANSAC-fundamental inliers **vs frame gap** (with worst-case `min`, the survival
 floor) and **track survival** (features seeded on frame 0). Finding: on smooth
 low-parallax nadir cruise KLT wins mean track count + persistence (~98% over 30

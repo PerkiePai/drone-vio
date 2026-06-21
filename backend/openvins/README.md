@@ -63,13 +63,39 @@ backend/openvins/run_openvins_viz.sh
 #    (prefix PLAY_RATE=0.5 if the estimator lags realtime)
 ```
 
-## Status / TODO
-- [x] OpenVINS cloned + `openvins:noetic` image built
-- [x] AMvalley calibration (intrinsics, cam-IMU extrinsic, BMI088 noise) + config
-- [ ] Download AMvalley01.bag (browser; blocked on Drive quota for CLI)
-- [ ] Confirm exact bag topic names via `inspect_bag.sh`, set them in `run_openvins.sh`
-- [ ] Run OpenVINS, sanity-check it initializes and tracks
-- [ ] **Evaluate**: extract RTK ground truth from the bag to ov_eval format and run
-      `rosrun ov_eval error_dataset` (ATE/RPE) vs the estimate
-- [ ] Tune: IMU noise (top knob), `fast_threshold`, init mode (`init_dyn_use`) if it
-      starts in flight, distortion k3 (pre-undistort if corners matter)
+## Results
+
+### MARS-LVIG AMvalley01 (aerial nadir) — monocular VIO FAILS (expected)
+Pipeline runs end-to-end (decompress → estimate → track), but the trajectory
+**diverges to km scale** under every init method tried (`sweep_init.sh`). Root cause
+is fundamental, not a bug:
+- **IMU units:** Livox `/livox/imu` accel is in **g, not m/s²** → `imu_g_to_si.py`
+  rescales to `/livox/imu_si`. (Without this, gravity leaks into velocity.)
+- **Node name:** must pass `__name:=ov_msckf` or topics land under `/run_subscribe_msckf/*`.
+- **Observability:** even with units fixed and dynamic init forced at the IMU-excited
+  windows found by `scan_imu_excitation.py` (t≈10 s, 1093 s), the best run still drifts
+  to ~28 m/s / 1.7 km. At 80–130 m nadir the scene is near-planar, low-parallax, and the
+  flight is smooth → **monocular scale/gravity are not observable**. MARS-LVIG is a
+  *LiDAR*-inertial dataset; pure-mono VIO is near its limit here.
+
+### TUM-VI room1 (handheld indoor) — monocular VIO WORKS ✅
+Switched to OpenVINS's native dataset to validate the pipeline (`run_tumvi.sh`,
+monocular, built-in `tum_vi` config + ground truth):
+
+| metric | value |
+|---|---|
+| **ATE** (abs. trajectory error, pos RMSE) | **0.068 m (6.8 cm)** |
+| ATE orientation RMSE | 1.24° |
+| **RPE** (relative pos error) | 2.4 cm @ 8 m → 7.5 cm @ 40 m |
+| init | static, clean (velocity ≈ 0) |
+
+Plot: `_out/tumvi_room1_trajectory.png` (estimate overlays GT). Annotated feature-track
+video: `_result/tumvi_room1_tracks.mp4`. This is the working, ground-truth-evaluated
+monocular VIO result; AMvalley's divergence is a property of the *data*, not the pipeline.
+
+### Scripts added for this investigation
+- `imu_g_to_si.py` — Livox g→m/s² IMU converter (publishes `/livox/imu_si`).
+- `scan_imu_excitation.py` — find well-excited windows in a bag for dynamic init.
+- `sweep_init.sh` — try multiple init methods on AMvalley in one pass.
+- `run_tumvi.sh` — monocular OpenVINS on TUM-VI room1 + `ov_eval` ATE/RPE.
+- `plot_traj.py` — SE3-align + plot an estimate vs ground truth.

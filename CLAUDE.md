@@ -64,8 +64,18 @@ conda run -n cv python frontend/openvins-alike-lightglue/compare_tracking.py \
 # build once; then inspect topics and run (headless or with live viz + mp4)
 docker build -t openvins:noetic -f backend/openvins/Dockerfile backend/openvins
 backend/openvins/inspect_bag.sh
-backend/openvins/run_openvins_viz.sh        # see backend/openvins/README.md
+backend/openvins/run_openvins_viz.sh        # MARS-LVIG; see backend/openvins/README.md
+
+# TUM-VI room1 — known-good monocular VIO + ATE/RPE (mono ATE ~6.8 cm)
+backend/openvins/run_tumvi.sh
+backend/openvins/accuracy_sweep.sh          # try many configs, report ATE
 ```
+
+**Result summary:** monocular VIO **fails on MARS-LVIG AMvalley** (km-scale drift —
+high-altitude nadir is low-parallax, scale unobservable; it's a LiDAR-inertial dataset)
+but **works on TUM-VI room1** (ATE 6.8 cm). See `backend/openvins/README.md` →
+*Results*. Gotchas found: Livox accel is in **g** (`imu_g_to_si.py`), and `rosrun`
+needs `__name:=ov_msckf` or topics land under the wrong namespace.
 
 ## Layout
 

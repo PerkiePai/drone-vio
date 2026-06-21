@@ -75,7 +75,28 @@ It's a genuine trade — neither wins outright:
   same "adaptive fallback" idea as `frontend/`'s XFeat+LGdyn. This low-parallax
   regime is also why monocular VIO *init* is hard on this dataset (`backend/openvins`).
 
+## Also run on TUM-VI room1 (handheld, where the VIO actually works)
+Same comparison on TUM-VI room1 frames (512×512 fisheye, `--scale 1.0`,
+`_frames_tumvi/` → `_out_tumvi/`). The conclusion is the **same but sharper**,
+because handheld motion is faster than the smooth drone:
+
+| gap | KLT matches (mean / **min**) | ALIKED+LG (mean / **min**) |
+|---|---|---|
+| 1 | 280 / 259 | 300 / 272 |
+| 5 | 265 / **11** | 320 / 208 |
+| 10 | 171 / **1** ⚠️ | 268 / **186** |
+
+KLT's worst-case **collapses to 1 match at gap 10** (optical flow can't bridge the
+larger handheld baseline), while ALIKED+LightGlue holds 186. Track survival to frame
+30: KLT 94%, ALIKED+LightGlue 47%. So across **both** an aerial and a handheld
+dataset: KLT wins mean/persistence at small baselines; the learned front-end wins
+the robustness floor at wide baselines. (Caveat: TUM-VI is fisheye, so the
+fundamental-matrix inlier ratio is a looser proxy — both methods see the same
+distortion, so the relative comparison still holds.)
+
 ## Files
-- `extract_frames.py` — pull frames from a MARS-LVIG bag (run in `openvins:noetic`).
-- `compare_tracking.py` — the comparison (KLT vs ALIKED+LightGlue; `--viz` for plots).
-- `_frames/`, `_out/` — gitignored (large images / results).
+- `extract_frames.py` — pull frames from a MARS-LVIG bag (compressed; `openvins:noetic`).
+- `extract_frames_tumvi.py` — pull raw mono frames from a TUM-VI bag.
+- `compare_tracking.py` — the comparison; `--frames/--out` to point at a frame set,
+  `--viz` for match panels + plots.
+- `_frames*/`, `_out*/` — gitignored (large images / results).
