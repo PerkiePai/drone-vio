@@ -114,6 +114,20 @@ with published TUM-VI room results), and parameter tuning does not reliably beat
 Stereo scored *worse* in the single sweep (7.1 cm) but wasn't repeat-tested, so that's
 likely noise too — not a real mono-beats-stereo result.
 
+**Generalization (room2):** confirmed the "best" config doesn't transfer. On TUM-VI
+room2 (a harder sequence) baseline and `clones15+CLAHE` are identical — 8.4 vs 8.5 cm:
+
+| config | room1 (3-run mean) | room2 (2 runs) |
+|---|---|---|
+| baseline mono | 5.1 cm | 8.4 / 8.4 cm |
+| max_clones15 + CLAHE | 4.6 cm | 8.5 / 8.5 cm |
+
+So the room1 tuning win was sequence-specific noise; across two sequences tuning gives
+**no reliable improvement**. Final answer: monocular OpenVINS here is **~5 cm (room1) /
+~8 cm (room2)** and that is the algorithm's accuracy on this data, not something config
+tuning moves. (Interesting aside: room2's runs were perfectly deterministic — 8.4/8.4 —
+so the realtime-frame-drop variance seen on room1 is sequence-dependent.)
+
 ### Scripts added for this investigation
 - `imu_g_to_si.py` — Livox g→m/s² IMU converter (publishes `/livox/imu_si`).
 - `scan_imu_excitation.py` — find well-excited windows in a bag for dynamic init.
