@@ -33,8 +33,8 @@ feat_rep_msckf: "GLOBAL_3D"
 feat_rep_slam: "ANCHORED_MSCKF_INVERSE_DEPTH"
 feat_rep_aruco: "ANCHORED_MSCKF_INVERSE_DEPTH"
 
-# ZUPT: drone may hover briefly — enable to help static init
-try_zupt: true
+# ZUPT: disabled — drone rises immediately from frame 1, never fully static
+try_zupt: false
 zupt_chi2_multipler: 1
 zupt_max_velocity: 0.3
 zupt_noise_multiplier: 10
@@ -48,14 +48,15 @@ baro_noise_std: 0.3         # sim baro is clean; 0.3 m 1-sigma
 baro_chi2_multiplier: 1.0
 
 # ==================================================================
-# Initialization. Sim dataset starts from hover near takeoff.
-# Static init (2 s window) should work; fall back to dynamic if needed.
+# Initialization. Drone rises immediately from frame 1 at ~83 cm/s.
+# At 0.5 m altitude, feature disparity reaches ~68 px/frame — far above
+# the static-init limit.  Use dynamic init as primary path.
 init_window_time: 2.0
-init_imu_thresh: 1.0        # low threshold: sim IMU is clean
-init_max_disparity: 10.0    # 960px image, camera at ~1 m alt initially
+init_imu_thresh: 1.5
+init_max_disparity: 80.0    # allow large disparity (rising nadir camera)
 init_max_features: 75
 
-init_dyn_use: false
+init_dyn_use: true           # dynamic init: works during motion
 init_dyn_mle_opt_calib: false
 init_dyn_mle_max_iter: 50
 init_dyn_mle_max_time: 0.05
