@@ -56,7 +56,8 @@ init_imu_thresh: 1.5
 init_max_disparity: 80.0    # allow large disparity (rising nadir camera)
 init_max_features: 75
 
-init_dyn_use: true           # dynamic init: works during motion
+# dynamic init: works during motion (drone rises immediately, no static period)
+init_dyn_use: true
 init_dyn_mle_opt_calib: false
 init_dyn_mle_max_iter: 50
 init_dyn_mle_max_time: 0.05
