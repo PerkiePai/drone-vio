@@ -2,6 +2,18 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Goal (north star)
+
+Build a **GPS-denied drone self-navigator** that localizes from cameras + IMU only
+(no GNSS). The drone has **two independent monocular cameras** — a **downward (nadir)**
+camera and a **forward FPV** camera — which are **not** rigidly paired / not a stereo
+rig (treat each as its own monocular sensor, no cross-camera stereo constraints).
+
+Current phase: **downward camera first** — that is exactly the nadir monocular VIO this
+repo works on now. The FPV camera is a later phase. This is why everything here is
+**monocular, IMU+camera, no GPS**, and why the downward/nadir regime (and its
+low-parallax difficulty at altitude) is the focus.
+
 ## Purpose
 
 Drone visual-inertial odometry (VIO), in two parts:
