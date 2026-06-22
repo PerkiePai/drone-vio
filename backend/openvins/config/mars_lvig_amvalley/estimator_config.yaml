@@ -49,7 +49,7 @@ init_imu_thresh: 1.5
 init_max_disparity: 30.0   # scaled up for 2448px wide images (euroc uses 10 at 752px)
 init_max_features: 75
 
-init_dyn_use: false
+init_dyn_use: true
 init_dyn_mle_opt_calib: false
 init_dyn_mle_max_iter: 50
 init_dyn_mle_max_time: 0.05
