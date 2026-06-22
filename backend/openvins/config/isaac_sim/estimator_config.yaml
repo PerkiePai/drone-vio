@@ -1,16 +1,21 @@
-%YAML:1.0 # need to specify the file type at the top!
-# OpenVINS config for MARS-LVIG AMvalley (monocular VIO, IMU + camera only, no GNSS).
-# High-altitude (80-130 m) nadir/downward UAV footage -> low parallax; expect this to be
-# the hard regime. See backend/data/amvalley_calibration.md for the calibration provenance.
+%YAML:1.0
+# OpenVINS config for Isaac Sim nadir drone dataset.
+# Monocular, IMU (FRD body, 50 Hz) + downward camera (10 Hz, 960x600).
+#
+# IMPORTANT: camera is gimbal-stabilised (extrinsic_is_constant=false).
+# The T_imu_cam in kalibr_imucam_chain.yaml is the takeoff snapshot only.
+# calib_cam_extrinsics=true lets OpenVINS refine it slightly, but large
+# attitude changes will cause drift.  Re-record with DOWN_STABILIZE=False
+# for a proper rigid extrinsic before using this in production.
 
 verbosity: "INFO"
 
 use_fej: true
 integration: "rk4"
-use_stereo: false       # monocular
+use_stereo: false
 max_cameras: 1
 
-calib_cam_extrinsics: true    # refine cam-IMU extrinsic (ours is composed/approximate)
+calib_cam_extrinsics: true
 calib_cam_intrinsics: true
 calib_cam_timeoffset: true
 calib_imu_intrinsics: false
@@ -28,25 +33,26 @@ feat_rep_msckf: "GLOBAL_3D"
 feat_rep_slam: "ANCHORED_MSCKF_INVERSE_DEPTH"
 feat_rep_aruco: "ANCHORED_MSCKF_INVERSE_DEPTH"
 
-try_zupt: false
-zupt_chi2_multipler: 0
-zupt_max_velocity: 0.1
+# ZUPT: drone may hover briefly — enable to help static init
+try_zupt: true
+zupt_chi2_multipler: 1
+zupt_max_velocity: 0.3
 zupt_noise_multiplier: 10
-zupt_max_disparity: 0.5
-zupt_only_at_beginning: false
+zupt_max_disparity: 1.0
+zupt_only_at_beginning: true
 
-# Barometer altitude update (experimental -- see backend/openvins/synthetic_baro.py).
-# Enable with use_baro: true when running run_marslvig_baro.sh.
-use_baro: false
-baro_noise_std: 0.5        # 1-sigma metres; tune based on sensor quality
-baro_chi2_multiplier: 1.0  # chi2 gate; increase to accept more outliers
+# Barometer altitude update — constrains scale in nadir (low-parallax) regime.
+# /baro_height topic is published by the bag converter.
+use_baro: true
+baro_noise_std: 0.3         # sim baro is clean; 0.3 m 1-sigma
+baro_chi2_multiplier: 1.0
 
 # ==================================================================
-# Initialization. UAV may already be moving; if static init fails,
-# set init_dyn_use: true (dynamic initialization).
+# Initialization. Sim dataset starts from hover near takeoff.
+# Static init (2 s window) should work; fall back to dynamic if needed.
 init_window_time: 2.0
-init_imu_thresh: 1.5
-init_max_disparity: 30.0   # scaled up for 2448px wide images (euroc uses 10 at 752px)
+init_imu_thresh: 1.0        # low threshold: sim IMU is clean
+init_max_disparity: 10.0    # 960px image, camera at ~1 m alt initially
 init_max_features: 75
 
 init_dyn_use: false
@@ -61,8 +67,8 @@ init_dyn_inflation_vel: 100
 init_dyn_inflation_bg: 10
 init_dyn_inflation_ba: 100
 init_dyn_min_rec_cond: 1e-12
-init_dyn_bias_g: [ 0.0, 0.0, 0.0 ]
-init_dyn_bias_a: [ 0.0, 0.0, 0.0 ]
+init_dyn_bias_g: [0.0, 0.0, 0.0]
+init_dyn_bias_a: [0.0, 0.0, 0.0]
 
 # ==================================================================
 record_timing_information: false
@@ -74,18 +80,18 @@ filepath_std: "/tmp/ov_estimate_std.txt"
 filepath_gt: "/tmp/ov_groundtruth.txt"
 
 # ==================================================================
-# front-end feature tracking
+# Front-end: KLT on 960x600 nadir imagery
 use_klt: true
-num_pts: 250            # features per frame
-fast_threshold: 20      # lower if forest canopy is low-texture
+num_pts: 300
+fast_threshold: 15          # ground texture varies; lower threshold helps
 grid_x: 5
-grid_y: 5
-min_px_dist: 15         # scaled up for high-res image
+grid_y: 3                   # 960x600: fewer rows
+min_px_dist: 10
 knn_ratio: 0.70
-track_frequency: 11.0   # camera is 10 Hz
-downsample_cameras: false  # full 2448x2048 (10 Hz leaves compute budget)
+track_frequency: 10.0
+downsample_cameras: false
 num_opencv_threads: 4
-histogram_method: "CLAHE"  # outdoor lighting
+histogram_method: "CLAHE"   # outdoor lighting in sim
 
 use_aruco: false
 num_aruco: 1024

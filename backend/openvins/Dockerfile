@@ -15,6 +15,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         libgoogle-glog-dev libgflags-dev libatlas-base-dev libsuitesparse-dev libceres-dev \
         python3-dev python3-matplotlib python3-numpy python3-psutil python3-tk \
         ros-noetic-image-transport ros-noetic-compressed-image-transport ros-noetic-cv-bridge \
+    && apt-get remove -y ros-noetic-compressed-depth-image-transport \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy OpenVINS source into a catkin workspace and build it.

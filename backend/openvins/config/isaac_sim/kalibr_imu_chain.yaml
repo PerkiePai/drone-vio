@@ -1,0 +1,18 @@
+%YAML:1.0
+# Isaac Sim IMU — FRD body frame, 50 Hz
+# Noise params: simulation "realistic noise + bias" defaults.
+# Tune with allan_variance_ros if you have a static recording.
+imu0:
+  T_i_b:
+    - [1.0, 0.0, 0.0, 0.0]
+    - [0.0, 1.0, 0.0, 0.0]
+    - [0.0, 0.0, 1.0, 0.0]
+    - [0.0, 0.0, 0.0, 1.0]
+  accelerometer_noise_density: 0.01       # m/s^2/sqrt(Hz)
+  accelerometer_random_walk: 0.0002       # m/s^3/sqrt(Hz)
+  gyroscope_noise_density: 0.001          # rad/s/sqrt(Hz)
+  gyroscope_random_walk: 0.00002          # rad/s^2/sqrt(Hz)
+  model: calibrated
+  rostopic: /imu0
+  time_offset: 0.0
+  update_rate: 50.0
