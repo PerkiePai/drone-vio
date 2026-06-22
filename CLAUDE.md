@@ -64,7 +64,7 @@ conda run -n car-detection python frontend/compare/compare_matchers.py --gaps 1 
 #    -> table + compare/_out/extractors_<stem>.csv
 conda run -n car-detection python frontend/compare/compare_extractors.py --gaps 1 3 6 12
 
-# 7. OpenVINS-KLT vs ALIKED+LightGlue tracking on real MARS-LVIG frames
+# 7. KLT vs ALIKED+LightGlue vs XFeat+LGdyn tracking on real MARS-LVIG frames
 #    (cv env) -> table + plots + CSV in frontend/openvins-alike-lightglue/_out/
 conda run -n cv python frontend/openvins-alike-lightglue/compare_tracking.py \
     --scale 0.5 --gaps 1 2 3 5 10 --pairs 25 --surv_T 30 --viz

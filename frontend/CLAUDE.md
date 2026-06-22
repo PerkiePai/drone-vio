@@ -96,18 +96,17 @@ quality floor, DISK peaks on clean short-baseline but is slowest (~150 ms), and
 ALIKED's detector can collapse on a low-texture frame (bev-forest 0→12: 94 kpts
 → 0 matches) — a tail risk for VIO.
 
-**KLT vs ALIKED+LightGlue (`openvins-alike-lightglue/`).** Compares the OpenVINS
-*default* front-end (FAST + bidirectional Lucas-Kanade, forward-backward rejected)
-against ALIKED+LightGlue on real frames (AMvalley aerial AND TUM-VI handheld via
-`--frames`), on VIO-relevant metrics: matches
-+ RANSAC-fundamental inliers **vs frame gap** (with worst-case `min`, the survival
-floor) and **track survival** (features seeded on frame 0). Finding: on smooth
-low-parallax nadir cruise KLT wins mean track count + persistence (~98% over 30
-frames), but its floor *collapses* on low-texture/wide-baseline frames (73 matches
-at gap 10) where ALIKED+LightGlue holds (501) at higher inlier ratio and ~15-30x
-cheaper matching — same adaptive-fallback motivation as XFeat+LGdyn. KLT `ms`
-includes detect+track; LightGlue `ms` is matcher-only (extraction cached), so the
-latency columns are not like-for-like, as in the other harnesses.
+**Three-way tracking comparison (`openvins-alike-lightglue/`).** `compare_tracking.py`
+compares KLT, ALIKED+LightGlue, and **XFeat+LGdyn** on real frames (AMvalley aerial
+AND TUM-VI handheld via `--frames`), on VIO-relevant metrics: matches + RANSAC-
+fundamental inliers **vs frame gap** (with worst-case `min`, the survival floor) and
+**track survival** (features seeded on frame 0, chained through consecutive matches).
+`XFDyn` class: XFeat `detectAndCompute` (cached per frame, image_size set for
+LighterGlue) + adaptive `match_lighterglue` (conf=0.1; steps to 0.02 only when count
+drops below `--vio_min_points`, default 15). Keypoint indices for survival tracking
+are reconstructed from matched coordinates via argmin against the keypoint array.
+KLT `ms` includes detect+track; both learned-matcher `ms` columns are matcher-only
+(extraction cached) — not like-for-like with KLT, as in the other harnesses.
 
 **Geometry without calibration.** This footage has no camera intrinsics, so:
 inlier ratio is computed from a RANSAC **fundamental** matrix (needs no `K`),

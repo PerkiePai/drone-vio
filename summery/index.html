@@ -1,0 +1,623 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Drone VIO — Frontend Study</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+:root{
+  --bg:#0d1117;--s1:#161b22;--s2:#1c2128;--bd:#30363d;
+  --blue:#58a6ff;--green:#3fb950;--red:#f78166;--yellow:#e3b341;--purple:#bc8cff;
+  --txt:#e6edf3;--sub:#8b949e;
+  --klt:#58a6ff;--alg:#3fb950;--xfd:#bc8cff;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--txt);font:14px/1.5 'Segoe UI',system-ui,sans-serif}
+
+nav{
+  position:fixed;top:0;left:0;right:0;z-index:99;height:48px;
+  background:rgba(13,17,23,.95);backdrop-filter:blur(8px);
+  border-bottom:1px solid var(--bd);
+  display:flex;align-items:center;justify-content:space-between;padding:0 1.5rem;
+}
+.brand{font-weight:700;font-size:.9rem;color:var(--blue)}
+nav a{color:var(--sub);text-decoration:none;font-size:.8rem;padding:.25rem .6rem;border-radius:4px;transition:all .15s}
+nav a:hover{color:var(--txt);background:var(--s2)}
+
+.slide{
+  min-height:100vh;padding:5rem 1.5rem 3rem;
+  max-width:1200px;margin:0 auto;
+  border-bottom:1px solid var(--bd);
+}
+.slide:last-of-type{border-bottom:none}
+.tag{font-size:.65rem;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--blue);margin-bottom:.4rem}
+h1{font-size:clamp(1.8rem,4vw,2.8rem);font-weight:800;line-height:1.15;margin-bottom:.75rem}
+h2{font-size:clamp(1.3rem,2.5vw,1.8rem);font-weight:700;margin-bottom:.75rem}
+h3{font-size:.95rem;font-weight:600;color:var(--blue);margin-bottom:.4rem}
+.sub{color:var(--sub);max-width:80ch;margin-bottom:.75rem;font-size:.875rem}
+
+/* cards */
+.grid{display:grid;gap:.75rem;margin-top:1rem}
+.g2{grid-template-columns:repeat(auto-fit,minmax(320px,1fr))}
+.g3{grid-template-columns:repeat(auto-fit,minmax(260px,1fr))}
+.g4{grid-template-columns:repeat(auto-fit,minmax(200px,1fr))}
+.card{background:var(--s1);border:1px solid var(--bd);border-radius:8px;padding:1rem 1.2rem}
+.card.bl{border-left:3px solid var(--blue)}
+.card.gr{border-left:3px solid var(--green)}
+.card.rd{border-left:3px solid var(--red)}
+.card.yl{border-left:3px solid var(--yellow)}
+.card.pu{border-left:3px solid var(--purple)}
+.card p{color:var(--sub);font-size:.83rem;margin-top:.3rem}
+
+/* tables */
+.tw{overflow-x:auto;margin-top:.75rem}
+table{width:100%;border-collapse:collapse;font-size:.83rem}
+thead tr{background:var(--s2)}
+th{padding:.5rem .75rem;text-align:left;color:var(--sub);font-size:.7rem;font-weight:700;
+   letter-spacing:.08em;text-transform:uppercase;border-bottom:1px solid var(--bd)}
+td{padding:.45rem .75rem;border-bottom:1px solid var(--bd)}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:var(--s2)}
+.hi{color:var(--green);font-weight:700}
+.lo{color:var(--red);font-weight:700}
+.yl{color:var(--yellow);font-weight:700}
+
+/* callout */
+.box{
+  background:var(--s2);border:1px solid var(--bd);border-radius:8px;
+  padding:.9rem 1.1rem;margin-top:.75rem;font-size:.85rem;
+}
+.box.bl{border-left:4px solid var(--blue)}
+.box.gr{border-left:4px solid var(--green)}
+.box.rd{border-left:4px solid var(--red)}
+.box.yl{border-left:4px solid var(--yellow)}
+.box p{color:var(--txt);margin:0}
+
+/* chart containers */
+.chart-row{display:grid;gap:.75rem;margin-top:1rem}
+.chart-row.c2{grid-template-columns:repeat(auto-fit,minmax(360px,1fr))}
+.chart-row.c3{grid-template-columns:repeat(auto-fit,minmax(280px,1fr))}
+.chart-row.c4{grid-template-columns:repeat(auto-fit,minmax(220px,1fr))}
+.cbox{background:var(--s1);border:1px solid var(--bd);border-radius:8px;padding:.75rem}
+.cbox h4{font-size:.75rem;font-weight:600;color:var(--sub);margin-bottom:.5rem;letter-spacing:.04em;text-transform:uppercase}
+.cbox canvas{display:block;width:100%!important}
+
+/* img gallery */
+.imgs{display:grid;gap:.75rem;margin-top:.75rem}
+.imgs.i2{grid-template-columns:repeat(auto-fit,minmax(340px,1fr))}
+.imgs.i4{grid-template-columns:repeat(auto-fit,minmax(210px,1fr))}
+figure{background:var(--s1);border:1px solid var(--bd);border-radius:8px;overflow:hidden}
+figure img{width:100%;display:block}
+figcaption{padding:.4rem .6rem;font-size:.72rem;color:var(--sub)}
+
+/* badge */
+.b{display:inline-block;border-radius:3px;padding:.1rem .4rem;font-size:.68rem;font-weight:700}
+.b-bl{background:#1f3b5c;color:var(--blue)}
+.b-gr{background:#1b3a2b;color:var(--green)}
+.b-rd{background:#3a1f1b;color:var(--red)}
+.b-yl{background:#3a2f10;color:var(--yellow)}
+
+/* color labels */
+.klt{color:var(--klt)}
+.alg{color:var(--alg)}
+.xfd{color:var(--xfd)}
+
+/* metric big number */
+.metrics{display:flex;gap:.75rem;flex-wrap:wrap;margin-top:.75rem}
+.metric{background:var(--s1);border:1px solid var(--bd);border-radius:8px;
+  padding:.7rem 1rem;min-width:130px;flex:1}
+.metric .val{font-size:1.6rem;font-weight:800;line-height:1}
+.metric .lbl{font-size:.7rem;color:var(--sub);margin-top:.25rem;text-transform:uppercase;letter-spacing:.06em}
+
+/* stage bar */
+.stages{display:flex;gap:.5rem;flex-wrap:wrap;margin:.75rem 0}
+.stage{background:var(--s2);border:1px solid var(--bd);border-radius:6px;
+  padding:.35rem .8rem;font-size:.78rem;font-weight:600}
+.stage.active{background:var(--blue);color:#000;border-color:var(--blue)}
+
+footer{text-align:center;padding:1.5rem;font-size:.75rem;color:var(--sub);border-top:1px solid var(--bd)}
+</style>
+</head>
+<body>
+
+<nav>
+  <span class="brand">Drone VIO — Frontend</span>
+  <div style="display:flex;gap:.25rem;flex-wrap:wrap">
+    <a href="#overview">Overview</a>
+    <a href="#matchers">Matchers</a>
+    <a href="#extractors">Extractors</a>
+    <a href="#adaptive">Adaptive</a>
+    <a href="#nadir">Nadir</a>
+    <a href="#tumvi">TUM-VI</a>
+    <a href="#verdict">Verdict</a>
+  </div>
+</nav>
+
+
+<!-- ═══════════════════════ 1. OVERVIEW ═══════════════════════ -->
+<section class="slide" id="overview">
+  <div class="tag">GPS-Denied Drone VIO</div>
+  <h1>Feature Matching Study</h1>
+  <p class="sub">Downward (nadir) camera + IMU only — no GPS. Which front-end keeps VIO alive?</p>
+
+  <div class="stages">
+    <div class="stage active">Stage 1 — 3 Matchers</div>
+    <div class="stage">→</div>
+    <div class="stage">Stage 2 — 4 Extractors</div>
+    <div class="stage">→</div>
+    <div class="stage">Stage 3 — Adaptive</div>
+    <div class="stage">→</div>
+    <div class="stage">Stage 4 — KLT vs ALIKED+LG vs XFeat+LGdyn</div>
+  </div>
+
+  <div class="grid g3">
+    <div class="card bl">
+      <h3>Datasets</h3>
+      <p><strong>MARS-LVIG</strong> — nadir aerial, smooth cruise, repetitive canopy (2448×2048)<br>
+         <strong>TUM-VI room1</strong> — handheld, fast rotation, rich indoor texture (512×512)</p>
+    </div>
+    <div class="card bl">
+      <h3>Metrics</h3>
+      <p><strong>Mean matches</strong> — average over all pairs<br>
+         <strong>Min matches</strong> — worst-case pair (survival floor)<br>
+         <strong>Inlier ratio</strong> — RANSAC fundamental matrix<br>
+         <strong>Track survival</strong> — features seeded frame 0, chained consecutively</p>
+    </div>
+    <div class="card bl">
+      <h3>VIO constraint</h3>
+      <p>Factor graph needs <strong>≥ 15 correspondences</strong> per frame to stay alive. <em>Min matches</em> and <em>survival</em> are the critical numbers — mean can look fine while one bad frame kills the estimator.</p>
+    </div>
+  </div>
+</section>
+
+
+<!-- ═══════════════════════ 2. MATCHERS ═══════════════════════ -->
+<section class="slide" id="matchers">
+  <div class="tag">Stage 1</div>
+  <h2>Three Pipelines</h2>
+  <p class="sub">Same 640×480 pixels fed to all. Latency = warmed-up average.</p>
+
+  <div class="grid g3">
+    <div class="card bl">
+      <h3>SuperGlue</h3>
+      <p>SuperPoint → GNN matcher. Weights bound to SuperPoint — no extractor swap.</p>
+    </div>
+    <div class="card bl">
+      <h3>LightGlue</h3>
+      <p>SuperPoint → attention matcher, adaptive depth. Faster than SuperGlue.</p>
+    </div>
+    <div class="card yl">
+      <h3>XFeat</h3>
+      <p>Single CNN: detect + 64-d describe + MNN match. No SuperPoint dependency.</p>
+    </div>
+  </div>
+
+  <div class="tw" style="margin-top:1rem">
+    <table>
+      <thead><tr><th>Variant</th><th>Detector</th><th>Descriptor</th><th>Matcher</th><th>Inlier ratio (nadir)</th><th>Note</th></tr></thead>
+      <tbody>
+        <tr><td>SuperGlue</td><td>SuperPoint</td><td>SuperPoint</td><td>GNN</td><td>High</td><td>Baseline learned</td></tr>
+        <tr><td>LightGlue</td><td>SuperPoint</td><td>SuperPoint</td><td>Attention</td><td class="hi">High</td><td>Faster, adaptive</td></tr>
+        <tr><td>XFeat* (MNN)</td><td>XFeat CNN</td><td>64-d CNN</td><td>MNN all</td><td class="lo">Low</td><td>Low-conf matches on repetitive canopy</td></tr>
+        <tr><td>XFeat*.82 (MNN)</td><td>XFeat CNN</td><td>64-d CNN</td><td>MNN cos≥0.82</td><td class="yl" style="color:var(--yellow)">Medium</td><td>Trades count for precision</td></tr>
+        <tr><td><strong>XFeat+LG*</strong></td><td>XFeat CNN</td><td>64-d CNN</td><td>LighterGlue</td><td class="hi"><strong>2–5× vs MNN</strong></td><td>Weakness was MNN, not XFeat</td></tr>
+        <tr><td><strong>XFeat+LGdyn</strong></td><td>XFeat CNN</td><td>64-d CNN</td><td>LighterGlue adaptive</td><td class="hi"><strong>Best pairwise</strong></td><td>Never catastrophically failed (pairwise)</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="box yl" style="margin-top:.75rem">
+    <p><strong>Finding:</strong> XFeat MNN gives low inlier ratio on repetitive canopy. Replacing MNN with LighterGlue gives <strong>2–5× better inliers</strong> — the extractor is fine, MNN was the bottleneck.</p>
+  </div>
+</section>
+
+
+<!-- ═══════════════════════ 3. EXTRACTORS ═══════════════════════ -->
+<section class="slide" id="extractors">
+  <div class="tag">Stage 2</div>
+  <h2>Four Extractors — Fixed Matcher (LightGlue)</h2>
+  <p class="sub">Isolates extractor speed vs quality. All fed same 640×480 RGB.</p>
+
+  <div class="tw">
+    <table>
+      <thead><tr><th>Extractor</th><th>Extract (ms)</th><th>Inlier quality</th><th>Tail risk</th></tr></thead>
+      <tbody>
+        <tr><td>SuperPoint</td><td class="hi">~52</td><td class="lo">Weakest</td><td>—</td></tr>
+        <tr><td>SIFT</td><td>Moderate</td><td>Moderate</td><td>—</td></tr>
+        <tr><td>DISK</td><td class="lo">~150</td><td>Peaks on clean short baseline</td><td>Slow</td></tr>
+        <tr><td><strong>ALIKED</strong></td><td>~88</td><td class="hi"><strong>Best on natural/degraded</strong></td><td class="lo">Collapses on featureless frames</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="box rd">
+    <p><strong>ALIKED tail risk:</strong> bev-forest gap 0→12 → 94 kpts → <strong>0 matches</strong>. One dead frame = VIO dies. Motivated the adaptive fallback.</p>
+  </div>
+
+  <div class="chart-row c2" style="margin-top:1rem">
+    <div class="cbox">
+      <h4>Extract speed (ms) — lower is better</h4>
+      <canvas id="extractSpeed" height="180"></canvas>
+    </div>
+    <div class="cbox">
+      <h4>Inlier quality rank (natural footage)</h4>
+      <canvas id="extractQuality" height="180"></canvas>
+    </div>
+  </div>
+</section>
+
+
+<!-- ═══════════════════════ 4. ADAPTIVE ═══════════════════════ -->
+<section class="slide" id="adaptive">
+  <div class="tag">Stage 3</div>
+  <h2>Adaptive Confidence (XFeat+LGdyn)</h2>
+  <p class="sub">Two-tier strategy to guarantee ≥15 matches even on hard frames.</p>
+
+  <div class="grid g2">
+    <div class="card gr">
+      <h3>Step 1 — Normal (easy frames)</h3>
+      <p>Match at <code>min_conf = 0.1</code> (tight). Zero extra cost — same as static.</p>
+    </div>
+    <div class="card yl">
+      <h3>Step 2 — Rescue (count &lt; 15)</h3>
+      <p>Re-match at <code>min_conf = 0.02</code> (loose). Accept lower-quality matches to keep factor graph alive.</p>
+    </div>
+  </div>
+
+  <div class="metrics">
+    <div class="metric"><div class="val" style="color:var(--green)">0</div><div class="lbl">Catastrophic fails (pairwise)</div></div>
+    <div class="metric"><div class="val" style="color:var(--blue)">0 ms</div><div class="lbl">Extra cost (easy frames)</div></div>
+    <div class="metric"><div class="val" style="color:var(--yellow)">1</div><div class="lbl">Extra match call (hard frames only)</div></div>
+  </div>
+
+  <div class="box yl">
+    <p><strong>Note:</strong> Adaptive confidence prevents pairwise dropout. But XFeat re-detects fresh keypoints every frame — so long-chain <em>track survival</em> still collapses (see Stage 4). Best pairwise ≠ best VIO front-end.</p>
+  </div>
+</section>
+
+
+<!-- ═══════════════════════ 5. NADIR ═══════════════════════ -->
+<section class="slide" id="nadir">
+  <div class="tag">Stage 4 — MARS-LVIG Aerial Nadir</div>
+  <h2>Smooth cruise: <span class="klt">KLT</span> vs <span class="alg">ALIKED+LG</span> vs <span class="xfd">XFeat+LGdyn</span></h2>
+  <p class="sub">25 pairs per gap · 1224×1024 (0.5 scale) · RANSAC fundamental matrix · 200 frames</p>
+
+  <div class="tw">
+    <table>
+      <thead>
+        <tr><th>Method</th><th>Gap</th><th>Mean matches</th><th>Min matches</th><th>Inliers</th><th>Inlier %</th><th>Latency (ms)</th></tr>
+      </thead>
+      <tbody>
+        <tr><td class="klt">KLT</td>        <td>1</td>  <td class="hi">1023</td><td class="hi">1017</td><td class="hi">1023</td><td class="hi">100%</td><td>84</td></tr>
+        <tr><td class="alg">ALIKED+LG</td>  <td>1</td>  <td>751</td>           <td>725</td>           <td>750</td>           <td class="hi">99.8%</td><td class="hi">2.9</td></tr>
+        <tr><td class="xfd">XFeat+LGdyn</td><td>1</td>  <td>331</td>           <td>279</td>           <td>218</td>           <td class="lo">65.2%</td><td>20.0</td></tr>
+        <tr><td class="klt">KLT</td>        <td>2</td>  <td class="hi">1003</td><td>630</td>           <td class="hi">1001</td><td>99.7%</td>         <td>46</td></tr>
+        <tr><td class="alg">ALIKED+LG</td>  <td>2</td>  <td>745</td>           <td>622</td>           <td>743</td>           <td class="hi">99.8%</td><td class="hi">3.0</td></tr>
+        <tr><td class="xfd">XFeat+LGdyn</td><td>2</td>  <td>342</td>           <td>256</td>           <td>238</td>           <td class="lo">69.0%</td><td>20.5</td></tr>
+        <tr><td class="klt">KLT</td>        <td>5</td>  <td class="hi">952</td> <td>555</td>           <td class="hi">939</td> <td>98.4%</td>         <td>48</td></tr>
+        <tr><td class="alg">ALIKED+LG</td>  <td>5</td>  <td>720</td>           <td class="hi">632</td> <td>711</td>           <td class="hi">98.7%</td><td class="hi">3.2</td></tr>
+        <tr><td class="xfd">XFeat+LGdyn</td><td>5</td>  <td>312</td>           <td>238</td>           <td>201</td>           <td class="lo">64.5%</td><td>19.3</td></tr>
+        <tr><td class="klt"><b>KLT</b></td>        <td><b>10</b></td><td class="hi"><b>862</b></td><td class="lo"><b>73</b></td><td class="hi"><b>843</b></td><td>95.3%</td><td>34</td></tr>
+        <tr><td class="alg"><b>ALIKED+LG</b></td>  <td><b>10</b></td><td>684</td>           <td class="hi"><b>501</b></td><td>662</td>           <td class="hi"><b>96.7%</b></td><td class="hi"><b>3.1</b></td></tr>
+        <tr><td class="xfd"><b>XFeat+LGdyn</b></td><td><b>10</b></td><td>295</td>           <td>220</td>           <td>181</td>           <td class="lo">61.2%</td><td>18.4</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="chart-row c3" style="margin-top:1rem">
+    <div class="cbox">
+      <h4>Mean matches vs gap</h4>
+      <canvas id="nadirMean" height="200"></canvas>
+    </div>
+    <div class="cbox">
+      <h4>Min matches vs gap (survival floor)</h4>
+      <canvas id="nadirMin" height="200"></canvas>
+    </div>
+    <div class="cbox">
+      <h4>Inlier % vs gap</h4>
+      <canvas id="nadirInlier" height="200"></canvas>
+    </div>
+  </div>
+
+  <div class="chart-row c2">
+    <div class="cbox">
+      <h4>Track survival — 30 frames (seeded frame 0)</h4>
+      <canvas id="nadirSurvival" height="200"></canvas>
+    </div>
+    <div class="cbox">
+      <h4>Latency (ms) — KLT=detect+track, LG/XF=match only</h4>
+      <canvas id="nadirLatency" height="200"></canvas>
+    </div>
+  </div>
+
+  <div class="imgs i2" style="margin-top:.75rem">
+    <figure><img src="nadir_matches_gap1.png" alt="gap-1"/><figcaption>Match viz — gap 1 (top: KLT · mid: ALIKED+LG · bottom: XFeat+LGdyn)</figcaption></figure>
+    <figure><img src="nadir_matches_gap10.png" alt="gap-10"/><figcaption>Match viz — gap 10</figcaption></figure>
+  </div>
+
+  <div class="box rd" style="margin-top:.75rem">
+    <p><strong>XFeat+LGdyn on nadir:</strong> 65% inlier ratio (vs 99.8% for ALIKED+LG). Track chain dead by frame 18 — catastrophic for MSCKF. The adaptive confidence prevents single-pair dropout but cannot fix the structural problem: XFeat re-detects fresh keypoints every frame, so chained track survival is always poor.</p>
+  </div>
+</section>
+
+
+<!-- ═══════════════════════ 6. TUM-VI ═══════════════════════ -->
+<section class="slide" id="tumvi">
+  <div class="tag">Stage 4 — TUM-VI Handheld</div>
+  <h2>Fast motion: <span class="klt">KLT</span> vs <span class="alg">ALIKED+LG</span> vs <span class="xfd">XFeat+LGdyn</span></h2>
+  <p class="sub">25 pairs per gap · 256×256 (0.5 scale) · RANSAC fundamental · 200 frames</p>
+
+  <div class="tw">
+    <table>
+      <thead>
+        <tr><th>Method</th><th>Gap</th><th>Mean matches</th><th>Min matches</th><th>Inliers</th><th>Inlier %</th><th>Latency (ms)</th></tr>
+      </thead>
+      <tbody>
+        <tr><td class="klt">KLT</td>        <td>1</td>  <td>170</td>           <td>151</td>           <td>170</td>           <td class="hi">100%</td><td class="hi">2.9</td></tr>
+        <tr><td class="alg">ALIKED+LG</td>  <td>1</td>  <td>128</td>           <td>116</td>           <td>127</td>           <td class="hi">99.5%</td><td>6.3</td></tr>
+        <tr><td class="xfd">XFeat+LGdyn</td><td>1</td>  <td class="hi">638</td><td class="hi">570</td><td class="hi">436</td><td>69.0%</td><td>32.9</td></tr>
+        <tr><td class="klt">KLT</td>        <td>2</td>  <td>169</td>           <td>151</td>           <td>168</td>           <td>99.3%</td>         <td class="hi">1.8</td></tr>
+        <tr><td class="alg">ALIKED+LG</td>  <td>2</td>  <td>115</td>           <td>93</td>            <td>112</td>           <td>96.8%</td>         <td>6.7</td></tr>
+        <tr><td class="xfd">XFeat+LGdyn</td><td>2</td>  <td class="hi">544</td><td class="hi">433</td><td class="hi">451</td><td>81.1%</td>         <td>27.2</td></tr>
+        <tr><td class="klt">KLT</td>        <td>3</td>  <td>170</td>           <td>69</td>            <td>164</td>           <td>96.6%</td>         <td class="hi">1.9</td></tr>
+        <tr><td class="alg">ALIKED+LG</td>  <td>3</td>  <td>116</td>           <td>93</td>            <td>109</td>           <td>93.3%</td>         <td>6.5</td></tr>
+        <tr><td class="xfd">XFeat+LGdyn</td><td>3</td>  <td class="hi">516</td><td class="hi">399</td><td class="hi">322</td><td>63.1%</td>         <td>26.2</td></tr>
+        <tr><td class="klt"><b>KLT</b></td>        <td><b>5</b></td> <td>157</td>           <td class="lo"><b>7</b></td>   <td>145</td>           <td>88.3%</td>         <td class="hi">2.1</td></tr>
+        <tr><td class="alg"><b>ALIKED+LG</b></td>  <td><b>5</b></td> <td>121</td>           <td class="hi"><b>91</b></td>  <td>106</td>           <td class="hi">87.7%</td><td>6.6</td></tr>
+        <tr><td class="xfd"><b>XFeat+LGdyn</b></td><td><b>5</b></td> <td class="hi">483</td><td class="hi"><b>386</b></td><td class="hi">316</td>  <td>64.2%</td>         <td>25.6</td></tr>
+        <tr><td class="klt"><b>KLT</b></td>        <td><b>10</b></td><td>108</td>           <td class="lo"><b>1</b></td>   <td>96</td>            <td>78.2%</td>         <td class="hi">1.9</td></tr>
+        <tr><td class="alg"><b>ALIKED+LG</b></td>  <td><b>10</b></td><td>103</td>           <td class="hi"><b>76</b></td>  <td>86</td>            <td class="hi">83.9%</td><td>6.9</td></tr>
+        <tr><td class="xfd"><b>XFeat+LGdyn</b></td><td><b>10</b></td><td class="hi">420</td><td class="hi"><b>309</b></td><td class="hi">240</td>  <td>55.9%</td>         <td>22.5</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="chart-row c3" style="margin-top:1rem">
+    <div class="cbox">
+      <h4>Mean matches vs gap</h4>
+      <canvas id="tumMean" height="200"></canvas>
+    </div>
+    <div class="cbox">
+      <h4>Min matches vs gap (survival floor)</h4>
+      <canvas id="tumMin" height="200"></canvas>
+    </div>
+    <div class="cbox">
+      <h4>Inlier % vs gap</h4>
+      <canvas id="tumInlier" height="200"></canvas>
+    </div>
+  </div>
+
+  <div class="chart-row c2">
+    <div class="cbox">
+      <h4>Track survival — 30 frames (seeded frame 0)</h4>
+      <canvas id="tumSurvival" height="200"></canvas>
+    </div>
+    <div class="cbox">
+      <h4>Latency (ms)</h4>
+      <canvas id="tumLatency" height="200"></canvas>
+    </div>
+  </div>
+
+  <div class="imgs i2" style="margin-top:.75rem">
+    <figure><img src="tumvi_matches_gap1.png" alt="gap-1"/><figcaption>TUM-VI — gap 1 (top: KLT · mid: ALIKED+LG · bottom: XFeat+LGdyn)</figcaption></figure>
+    <figure><img src="tumvi_matches_gap10.png" alt="gap-10"/><figcaption>TUM-VI — gap 10</figcaption></figure>
+  </div>
+
+  <div class="box rd" style="margin-top:.75rem">
+    <p><strong>KLT min at gap 10 = 1 · gap 5 = 7.</strong> Below VIO minimum on fast motion. ALIKED+LG min = <strong>76</strong>. XFeat+LGdyn has highest raw count (420 mean) but 56% inlier ratio — 44% noise. Survival collapses to 4% by frame 30.</p>
+  </div>
+</section>
+
+
+<!-- ═══════════════════════ 7. VERDICT ═══════════════════════ -->
+<section class="slide" id="verdict">
+  <div class="tag">Verdict</div>
+  <h2>Three-Way Comparison</h2>
+  <p class="sub">
+    <span class="klt">■ KLT</span> &nbsp;·&nbsp;
+    <span class="alg">■ ALIKED+LightGlue</span> &nbsp;·&nbsp;
+    <span class="xfd">■ XFeat+LGdyn</span> &nbsp;·&nbsp;
+    <span style="color:var(--red)">— VIO min (15)</span>
+  </p>
+
+  <div class="chart-row c2" style="margin-top:.75rem">
+    <div class="cbox">
+      <h4>Min matches — Nadir (survival floor)</h4>
+      <canvas id="vNadirMin" height="220"></canvas>
+    </div>
+    <div class="cbox">
+      <h4>Min matches — TUM-VI (survival floor)</h4>
+      <canvas id="vTumMin" height="220"></canvas>
+    </div>
+  </div>
+
+  <div class="chart-row c2">
+    <div class="cbox">
+      <h4>Track survival % — Nadir</h4>
+      <canvas id="vNadirSurv" height="220"></canvas>
+    </div>
+    <div class="cbox">
+      <h4>Track survival % — TUM-VI</h4>
+      <canvas id="vTumSurv" height="220"></canvas>
+    </div>
+  </div>
+
+  <div class="tw" style="margin-top:1.25rem">
+    <table>
+      <thead><tr><th>Criterion</th><th class="klt">KLT</th><th class="alg">ALIKED+LG</th><th class="xfd">XFeat+LGdyn</th><th>Winner</th></tr></thead>
+      <tbody>
+        <tr><td>Mean count — nadir cruise</td>         <td class="hi">~1000</td>             <td>~700</td>              <td>~330</td>              <td class="klt">KLT</td></tr>
+        <tr><td>Inlier ratio — nadir</td>              <td class="hi">~99%</td>              <td class="hi">~99%</td>   <td class="lo">~65%</td>   <td class="klt">KLT / ALG tie</td></tr>
+        <tr><td>Track survival 30 fr — nadir</td>      <td class="hi">98%</td>               <td>25%</td>               <td class="lo">dead fr 18</td><td class="klt">KLT</td></tr>
+        <tr><td>Min — nadir gap 10</td>                <td class="lo">73</td>                <td class="hi">501</td>    <td>220</td>               <td class="alg">ALIKED+LG</td></tr>
+        <tr><td>Min — fast motion gap 5</td>           <td class="lo">7</td>                 <td class="hi">91</td>     <td class="hi">386</td>    <td class="xfd">XFeat+LGdyn</td></tr>
+        <tr><td>Min — fast motion gap 10</td>          <td class="lo">1 ← VIO DIES</td>     <td>76</td>                <td class="hi">309</td>    <td class="xfd">XFeat+LGdyn</td></tr>
+        <tr><td>Track survival 30 fr — TUM-VI</td>    <td class="hi">97%</td>               <td>51%</td>               <td class="lo">4%</td>     <td class="klt">KLT</td></tr>
+        <tr><td>Match latency (matcher only)</td>      <td>~46 ms*</td>                      <td class="hi">~3 ms</td>  <td>~20 ms</td>            <td class="alg">ALIKED+LG</td></tr>
+        <tr><td>VIO survival — nadir cruise</td>       <td class="hi">Safe</td>              <td class="hi">Robust</td> <td class="lo">Fails</td>  <td class="klt">KLT / ALG</td></tr>
+        <tr><td>VIO survival — fast motion</td>        <td class="lo">Fails (gap≥5)</td>     <td class="hi">Robust</td> <td class="hi">Robust†</td><td class="alg">ALIKED+LG</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p style="font-size:.72rem;color:var(--sub);margin-top:.4rem">* KLT latency includes detect+track; ALIKED+LG / XFeat+LGdyn latency is matcher-only (extraction ~88 ms / detect separately). Not directly comparable. &nbsp; † Pairwise robust; survival still weak.</p>
+
+  <div class="grid g3" style="margin-top:1rem">
+    <div class="card bl">
+      <h3><span class="klt">KLT</span> — best for nadir cruise</h3>
+      <p>Highest mean count, 98% survival over 30 frames. Breaks catastrophically on fast motion (min=1 at gap 10). Ideal native regime: slow smooth flight.</p>
+    </div>
+    <div class="card gr">
+      <h3><span class="alg">ALIKED+LG</span> — most robust overall</h3>
+      <p>99.8% inlier ratio on nadir, stable floor (501 at gap 10), holds through fast motion. 3 ms matcher latency. Best general-purpose VIO front-end.</p>
+    </div>
+    <div class="card pu">
+      <h3><span class="xfd">XFeat+LGdyn</span> — pairwise rescue only</h3>
+      <p>Highest raw count on TUM-VI, good pairwise floor on fast motion. But 65% inlier ratio on nadir and track chain dead by frame 18. Re-detection architecture incompatible with long MSCKF tracks.</p>
+    </div>
+  </div>
+
+  <div class="box gr" style="margin-top:.75rem">
+    <p><strong>Recommendation:</strong> <strong>ALIKED+LightGlue</strong> as the primary VIO front-end. Matches at ~3 ms; 99.8% inlier ratio on nadir; floor never drops below VIO minimum. KLT as a secondary/hybrid for smooth cruise segments. XFeat+LGdyn is not suitable as a VIO tracker — re-detection kills long-chain survival which MSCKF depends on. Next: integrate ALIKED+LG into OpenVINS and measure end-to-end ATE.</p>
+  </div>
+</section>
+
+
+<footer>Drone VIO — Feature Matching Study &nbsp;·&nbsp; PerkiePai</footer>
+
+<script>
+// ── shared defaults ─────────────────────────────────────────────
+const C = {
+  klt:'#58a6ff', alg:'#3fb950', xfd:'#bc8cff',
+  kltA:'rgba(88,166,255,.15)', algA:'rgba(63,185,80,.15)', xfdA:'rgba(188,140,255,.15)',
+  grid:'rgba(48,54,61,.6)', txt:'#8b949e', red:'#f78166'
+};
+const base = {
+  responsive:true, maintainAspectRatio:true,
+  plugins:{legend:{labels:{color:C.txt,font:{size:11},boxWidth:12}}},
+  scales:{
+    x:{ticks:{color:C.txt,font:{size:10}},grid:{color:C.grid}},
+    y:{ticks:{color:C.txt,font:{size:10}},grid:{color:C.grid}}
+  }
+};
+
+function ds(label,data,color,fill=false){
+  return{label,data,borderColor:color,backgroundColor:fill?color+'26':color+'22',
+    borderWidth:2,pointRadius:3,pointHoverRadius:5,tension:.3,fill};
+}
+function dsBar(label,data,color){
+  return{label,data,backgroundColor:color+'88',borderColor:color,borderWidth:1};
+}
+function vioLine(len){
+  return{label:'VIO min (15)',data:Array(len).fill(15),borderColor:C.red,borderWidth:1.5,
+    borderDash:[4,4],pointRadius:0,fill:false};
+}
+
+const GAPS=[1,2,3,5,10];
+
+// ─── extractor speed/quality ───────────────────────────────────
+new Chart(document.getElementById('extractSpeed'),{type:'bar',
+  data:{labels:['SuperPoint','SIFT','DISK','ALIKED'],
+    datasets:[dsBar('Extract ms',[52,70,150,88],C.klt)]},
+  options:{...base,scales:{...base.scales,y:{...base.scales.y,title:{display:true,text:'ms',color:C.txt}}}}});
+
+new Chart(document.getElementById('extractQuality'),{type:'bar',
+  data:{labels:['SuperPoint','SIFT','DISK','ALIKED'],
+    datasets:[dsBar('Inlier rank (4=best)',[1,2,3,4],C.alg)]},
+  options:{...base,scales:{...base.scales,y:{...base.scales.y,max:5}}}});
+
+// ─── nadir pairwise ────────────────────────────────────────────
+const nK={mean:[1023,1003,977,952,862],min:[1017,630,576,555,73], inlier:[100,99.7,99.5,98.4,95.3],lat:[84,46,46,48,34]};
+const nA={mean:[751,745,732,720,684], min:[725,622,638,632,501], inlier:[99.8,99.8,99.6,98.7,96.7],lat:[2.9,3.0,3.1,3.2,3.1]};
+const nX={mean:[331,342,320,312,295], min:[279,256,255,238,220], inlier:[65.2,69.0,65.8,64.5,61.2],lat:[20.0,20.5,19.6,19.3,18.4]};
+
+new Chart(document.getElementById('nadirMean'),{type:'line',
+  data:{labels:GAPS,datasets:[ds('KLT',nK.mean,C.klt),ds('ALIKED+LG',nA.mean,C.alg),ds('XFeat+LGdyn',nX.mean,C.xfd)]},
+  options:{...base,scales:{...base.scales,x:{...base.scales.x,title:{display:true,text:'Frame gap',color:C.txt}}}}});
+
+new Chart(document.getElementById('nadirMin'),{type:'line',
+  data:{labels:GAPS,datasets:[ds('KLT',nK.min,C.klt),ds('ALIKED+LG',nA.min,C.alg),ds('XFeat+LGdyn',nX.min,C.xfd),vioLine(5)]},
+  options:{...base,scales:{...base.scales,x:{...base.scales.x,title:{display:true,text:'Frame gap',color:C.txt}}}}});
+
+new Chart(document.getElementById('nadirInlier'),{type:'line',
+  data:{labels:GAPS,datasets:[ds('KLT',nK.inlier,C.klt),ds('ALIKED+LG',nA.inlier,C.alg),ds('XFeat+LGdyn',nX.inlier,C.xfd)]},
+  options:{...base,scales:{...base.scales,
+    x:{...base.scales.x,title:{display:true,text:'Frame gap',color:C.txt}},
+    y:{...base.scales.y,min:55,max:101,title:{display:true,text:'%',color:C.txt}}}}});
+
+new Chart(document.getElementById('nadirLatency'),{type:'bar',
+  data:{labels:GAPS.map(g=>'gap '+g),
+    datasets:[dsBar('KLT',nK.lat,C.klt),dsBar('ALIKED+LG',nA.lat,C.alg),dsBar('XFeat+LGdyn',nX.lat,C.xfd)]},
+  options:{...base,scales:{...base.scales,y:{...base.scales.y,title:{display:true,text:'ms',color:C.txt}}}}});
+
+// nadir survival
+const nsFrames=Array.from({length:31},(_,i)=>i);
+const nsKLT =[1024,1023,1021,1021,1021,1021,1021,1020,1020,1019,1016,1016,1016,1016,1016,1016,1016,1016,1016,1013,1011,1011,1010,1010,1010,1007,1007,1007,1005,1005,1005];
+const nsALG =[1024,758,649,563,508,474,451,416,398,379,366,354,346,333,325,319,312,305,299,291,288,283,280,274,271,271,267,266,265,264,261];
+const nsXFD =[1024,293,139,78,48,26,21,16,14,9,8,6,5,4,3,3,2,1,0,0,0,0,0,0,0,0,0,0,0,0,0];
+const pct=(arr)=>arr.map(v=>+(100*v/arr[0]).toFixed(1));
+new Chart(document.getElementById('nadirSurvival'),{type:'line',
+  data:{labels:nsFrames,datasets:[ds('KLT',pct(nsKLT),C.klt,true),ds('ALIKED+LG',pct(nsALG),C.alg,true),ds('XFeat+LGdyn',pct(nsXFD),C.xfd,true)]},
+  options:{...base,scales:{...base.scales,
+    x:{...base.scales.x,title:{display:true,text:'Frame',color:C.txt}},
+    y:{...base.scales.y,min:0,max:105,title:{display:true,text:'% surviving',color:C.txt}}}}});
+
+// ─── TUM-VI pairwise ───────────────────────────────────────────
+const tK={mean:[170,169,170,157,108],min:[151,151,69,7,1],  inlier:[100,99.3,96.6,88.3,78.2],lat:[2.9,1.8,1.9,2.1,1.9]};
+const tA={mean:[128,115,116,121,103],min:[116,93,93,91,76], inlier:[99.5,96.8,93.3,87.7,83.9],lat:[6.3,6.7,6.5,6.6,6.9]};
+const tX={mean:[638,544,516,483,420],min:[570,433,399,386,309],inlier:[69.0,81.1,63.1,64.2,55.9],lat:[32.9,27.2,26.2,25.6,22.5]};
+
+new Chart(document.getElementById('tumMean'),{type:'line',
+  data:{labels:GAPS,datasets:[ds('KLT',tK.mean,C.klt),ds('ALIKED+LG',tA.mean,C.alg),ds('XFeat+LGdyn',tX.mean,C.xfd)]},
+  options:{...base,scales:{...base.scales,x:{...base.scales.x,title:{display:true,text:'Frame gap',color:C.txt}}}}});
+
+new Chart(document.getElementById('tumMin'),{type:'line',
+  data:{labels:GAPS,datasets:[ds('KLT',tK.min,C.klt),ds('ALIKED+LG',tA.min,C.alg),ds('XFeat+LGdyn',tX.min,C.xfd),vioLine(5)]},
+  options:{...base,scales:{...base.scales,x:{...base.scales.x,title:{display:true,text:'Frame gap',color:C.txt}}}}});
+
+new Chart(document.getElementById('tumInlier'),{type:'line',
+  data:{labels:GAPS,datasets:[ds('KLT',tK.inlier,C.klt),ds('ALIKED+LG',tA.inlier,C.alg),ds('XFeat+LGdyn',tX.inlier,C.xfd)]},
+  options:{...base,scales:{...base.scales,
+    x:{...base.scales.x,title:{display:true,text:'Frame gap',color:C.txt}},
+    y:{...base.scales.y,min:50,max:102,title:{display:true,text:'%',color:C.txt}}}}});
+
+new Chart(document.getElementById('tumLatency'),{type:'bar',
+  data:{labels:GAPS.map(g=>'gap '+g),
+    datasets:[dsBar('KLT',tK.lat,C.klt),dsBar('ALIKED+LG',tA.lat,C.alg),dsBar('XFeat+LGdyn',tX.lat,C.xfd)]},
+  options:{...base,scales:{...base.scales,y:{...base.scales.y,title:{display:true,text:'ms',color:C.txt}}}}});
+
+// TUM-VI survival
+const tsKLT=[173,173,173,173,173,173,173,173,173,173,173,173,173,173,173,173,173,173,173,173,173,172,172,172,170,170,170,170,169,168,168];
+const tsALG=[146,133,124,122,115,113,113,111,110,107,106,101,99,98,96,95,93,92,91,89,89,89,88,88,86,86,83,83,81,76,75];
+const tsXFD=[888,650,541,464,417,381,354,333,321,301,277,248,228,212,200,188,178,162,148,137,126,115,99,89,81,72,63,55,50,42,36];
+new Chart(document.getElementById('tumSurvival'),{type:'line',
+  data:{labels:nsFrames,datasets:[ds('KLT',pct(tsKLT),C.klt,true),ds('ALIKED+LG',pct(tsALG),C.alg,true),ds('XFeat+LGdyn',pct(tsXFD),C.xfd,true)]},
+  options:{...base,scales:{...base.scales,
+    x:{...base.scales.x,title:{display:true,text:'Frame',color:C.txt}},
+    y:{...base.scales.y,min:0,max:105,title:{display:true,text:'% surviving',color:C.txt}}}}});
+
+// ─── verdict overlay charts ─────────────────────────────────────
+new Chart(document.getElementById('vNadirMin'),{type:'line',
+  data:{labels:GAPS,datasets:[ds('KLT',nK.min,C.klt),ds('ALIKED+LG',nA.min,C.alg),ds('XFeat+LGdyn',nX.min,C.xfd),vioLine(5)]},
+  options:{...base,scales:{...base.scales,x:{...base.scales.x,title:{display:true,text:'Frame gap',color:C.txt}},
+    y:{...base.scales.y,title:{display:true,text:'Min matches',color:C.txt}}}}});
+
+new Chart(document.getElementById('vTumMin'),{type:'line',
+  data:{labels:GAPS,datasets:[ds('KLT',tK.min,C.klt),ds('ALIKED+LG',tA.min,C.alg),ds('XFeat+LGdyn',tX.min,C.xfd),vioLine(5)]},
+  options:{...base,scales:{...base.scales,x:{...base.scales.x,title:{display:true,text:'Frame gap',color:C.txt}},
+    y:{...base.scales.y,title:{display:true,text:'Min matches',color:C.txt}}}}});
+
+new Chart(document.getElementById('vNadirSurv'),{type:'line',
+  data:{labels:nsFrames,datasets:[ds('KLT',pct(nsKLT),C.klt),ds('ALIKED+LG',pct(nsALG),C.alg),ds('XFeat+LGdyn',pct(nsXFD),C.xfd)]},
+  options:{...base,scales:{...base.scales,
+    x:{...base.scales.x,title:{display:true,text:'Frame',color:C.txt}},
+    y:{...base.scales.y,min:0,max:105,title:{display:true,text:'% surviving',color:C.txt}}}}});
+
+new Chart(document.getElementById('vTumSurv'),{type:'line',
+  data:{labels:nsFrames,datasets:[ds('KLT',pct(tsKLT),C.klt),ds('ALIKED+LG',pct(tsALG),C.alg),ds('XFeat+LGdyn',pct(tsXFD),C.xfd)]},
+  options:{...base,scales:{...base.scales,
+    x:{...base.scales.x,title:{display:true,text:'Frame',color:C.txt}},
+    y:{...base.scales.y,min:0,max:105,title:{display:true,text:'% surviving',color:C.txt}}}}});
+</script>
+</body>
+</html>
