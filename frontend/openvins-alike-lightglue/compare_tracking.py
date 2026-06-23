@@ -171,27 +171,46 @@ def pairwise(frames, scale, gaps, lg, xfd, n_pairs):
         if i not in xfeats: xfeats[i] = xfd.extract(G(i))
         return xfeats[i]
 
+    klt_corners = {}
+    def P(i):
+        if i not in klt_corners: klt_corners[i] = fast_corners(G(i))
+        return klt_corners[i]
+
     rows = []
     for g in gaps:
         idxs = list(range(0, min(n_pairs * g, len(frames) - g), g))[:n_pairs]
         agg = {"KLT": [], "ALIKED+LightGlue": [], "XFeat+LGdyn": []}
         for i in idxs:
-            # KLT
-            t = time.time(); k0, k1 = klt_pair(G(i), G(i + g)); klt_ms = (time.time() - t) * 1e3
+            G(i + g)  # pre-warm frame cache so disk I/O is never inside a timer
+            # KLT: old-frame corners cached (not timed); time track to new frame only
+            p0 = P(i)
+            t = time.time()
+            if len(p0) == 0:
+                k0, k1 = np.empty((0, 2)), np.empty((0, 2))
+            else:
+                p1, good = klt_track(G(i), G(i + g), p0)
+                k0, k1 = p0.reshape(-1, 2)[good], p1.reshape(-1, 2)[good]
+            klt_ms = (time.time() - t) * 1e3
             agg["KLT"].append((len(k0), geo_inliers(k0, k1), klt_ms))
-            # ALIKED+LightGlue (matcher-only; extraction cached)
-            f0, f1 = F(i), F(i + g)
+            # ALIKED+LightGlue: old-frame features cached (not timed); time extract(new)+match
+            f0 = F(i)
             torch.cuda.synchronize() if DEVICE == "cuda" else None
-            t = time.time(); m0, m1, _ = lg.match(f0, f1)
+            t = time.time()
+            f1 = lg.extract(G(i + g))
+            m0, m1, _ = lg.match(f0, f1)
             torch.cuda.synchronize() if DEVICE == "cuda" else None
             lg_ms = (time.time() - t) * 1e3
+            feats[i + g] = f1
             agg["ALIKED+LightGlue"].append((len(m0), geo_inliers(m0, m1), lg_ms))
-            # XFeat+LGdyn (matcher-only; extraction cached)
-            xf0, xf1 = XF(i), XF(i + g)
+            # XFeat+LGdyn: old-frame features cached (not timed); time extract(new)+match
+            xf0 = XF(i)
             torch.cuda.synchronize() if DEVICE == "cuda" else None
-            t = time.time(); xm0, xm1, _ = xfd.match(xf0, xf1)
+            t = time.time()
+            xf1 = xfd.extract(G(i + g))
+            xm0, xm1, _ = xfd.match(xf0, xf1)
             torch.cuda.synchronize() if DEVICE == "cuda" else None
             xf_ms = (time.time() - t) * 1e3
+            xfeats[i + g] = xf1
             agg["XFeat+LGdyn"].append((len(xm0), geo_inliers(xm0, xm1), xf_ms))
         for name, vals in agg.items():
             v = np.array(vals, float)

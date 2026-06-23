@@ -105,8 +105,10 @@ fundamental inliers **vs frame gap** (with worst-case `min`, the survival floor)
 LighterGlue) + adaptive `match_lighterglue` (conf=0.1; steps to 0.02 only when count
 drops below `--vio_min_points`, default 15). Keypoint indices for survival tracking
 are reconstructed from matched coordinates via argmin against the keypoint array.
-KLT `ms` includes detect+track; both learned-matcher `ms` columns are matcher-only
-(extraction cached) — not like-for-like with KLT, as in the other harnesses.
+All three `ms` columns measure the VIO incremental per-frame cost: given the previous
+frame is already cached, what does it cost to process a new frame? KLT times
+`klt_track` only (old-frame corners cached via `P(i)`); ALIKED+LG and XFeat+LGdyn
+time `extract(new_frame) + match` (old-frame features cached via `F(i)` / `XF(i)`).
 
 **Geometry without calibration.** This footage has no camera intrinsics, so:
 inlier ratio is computed from a RANSAC **fundamental** matrix (needs no `K`),
