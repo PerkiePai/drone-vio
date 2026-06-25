@@ -35,9 +35,16 @@ from pxr import UsdGeom, Gf
 from PIL import Image
 
 OUT_DIR    = os.path.expanduser("~/vio_dataset")
-FRAME_FPS  = 30        # image rate (Hz) per camera. Physics renders @60Hz, so <=60 is real. Exact rate is pinned to the actual data rate at runtime.
+FRAME_FPS  = 15        # image rate (Hz) per camera. Physics renders @60Hz, so <=60 is real. Exact rate is pinned to the actual data rate at runtime. (~15 is plenty for VIO; flow-odom's best stride was ~10 fps.)
 DATA_FPS   = 200       # imu + baro + poses rate (Hz). Physics runs @250Hz; decim=1 gives ~250Hz actual (closest integer divisor).
 CAM_W, CAM_H = 960, 600   # VIO capture size, 16:10 to match ZED X One GS (native 1920x1200). Optics read live from prim.
+# Image storage. PNG is lossless but ~5x larger and slow to encode (which also
+# starved the writer queue -> dropped frames). JPEG q92 is visually lossless for
+# feature tracking, ~5x smaller, and fast to encode. GRAYSCALE halves/thirds size
+# again for pure nadir VIO; keep RGB (default) if cam1/DSMAC/real2sim need colour.
+IMG_FORMAT   = "jpg"   # "jpg" (~5x smaller, fast) or "png" (lossless, large)
+JPEG_QUALITY = 92      # 90-95 ~ visually lossless for VIO; lower = smaller
+GRAYSCALE    = True    # True -> 1-channel (smaller); RGB only needed for COLOUR map-matching / real2sim
 PRINT_EVERY_S = 1.0
 TAKEOFF_ALT_M = 0.5   # start recording once the drone climbs this far above its resting altitude
 
@@ -306,9 +313,15 @@ else:
                 break
             logical, frame, ts_ns, rgb = item
             cdir, ff, lock = cam_io[logical]
-            path = os.path.join(cdir, f"f{frame:06d}.png")
+            path = os.path.join(cdir, f"f{frame:06d}.{IMG_FORMAT}")
             try:
-                Image.fromarray(rgb).save(path, compress_level=1)   # lossless, fast
+                im = Image.fromarray(rgb)
+                if GRAYSCALE:
+                    im = im.convert("L")
+                if IMG_FORMAT == "jpg":
+                    im.save(path, quality=JPEG_QUALITY)   # lossy but visually lossless @q92; ~5x smaller + fast
+                else:
+                    im.save(path, compress_level=1)        # lossless PNG, larger/slower
                 with lock:
                     ff.write(f"{frame},{ts_ns},{path}\n")
             except Exception:
@@ -388,21 +401,25 @@ else:
         # grab a frame from EVERY camera on the same data frame (shared ts_ns) so
         # cam0/cam1 are time-synced by construction.
         if fr % st["img_every"] == 0:
-            grabbed = False
+            # grab ALL cameras first, then enqueue atomically: either every camera's
+            # frame for this data frame is kept, or none is. Prevents the per-camera
+            # bias (cam0 enqueued first, so under queue pressure cam1 lost the race ->
+            # ~36% cam1 drops). All-or-nothing keeps cam0/cam1 frame-synced.
+            batch = []
             for c in cams:
                 try:
                     data = c["annot"].get_data()
                     if data is not None and getattr(data, "size", 0) > 0:
                         rgb = np.ascontiguousarray(np.asarray(data)[:, :, :3])
-                        try:
-                            imgq.put_nowait((c["logical"], fr, ts_ns, rgb))
-                            grabbed = True
-                        except queue.Full:
-                            st["dropped"] += 1     # writers can't keep up (was silent)
+                        batch.append((c["logical"], fr, ts_ns, rgb))
                 except Exception:
                     pass
-            if grabbed:
+            if len(batch) == len(cams) and imgq.qsize() + len(batch) <= imgq.maxsize:
+                for item in batch:
+                    imgq.put_nowait(item)
                 st["n_frame"] += 1
+            elif batch:
+                st["dropped"] += 1     # not enough room for the whole synced set (was silent)
         if now - st["last_print"] >= PRINT_EVERY_S:
             st["last_print"] = now
             f_imu.flush(); f_pose.flush(); f_geo.flush()
@@ -421,6 +438,10 @@ else:
     print(f">>> VIO recorder writing: {run_dir}")
     print(f">>> cameras: {cam_list}  (cam0 -> frames.csv/cam_calib.json; cam1 -> frames_cam1.csv/cam_calib_cam1.json)")
     print(f">>> data(imu+poses) @{DATA_FPS}Hz; images @~{FRAME_FPS}/s/cam (exact rate set at runtime); ONE clock.")
+    print(f">>> image format: {IMG_FORMAT.upper()}"
+          + (f" q{JPEG_QUALITY}" if IMG_FORMAT == "jpg" else " (lossless)")
+          + (", GRAYSCALE" if GRAYSCALE else ", RGB")
+          + (f"  (~5x smaller than PNG; lower FRAME_FPS to shrink further)" if IMG_FORMAT == "jpg" else ""))
     print(f">>> Armed. Recording auto-starts on TAKEOFF (drone climbs >{TAKEOFF_ALT_M:.2f} m above rest). "
           "Sitting on the ground writes nothing.")
     print(">>> Press Play / take off. down_cam = " +
