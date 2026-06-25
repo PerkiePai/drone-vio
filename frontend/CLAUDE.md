@@ -107,3 +107,57 @@ comes out negative and all points filter out, the convention is wrong.
   GT at ~1.5%** over 1.8 km; residual is AHRS tilt quality.
 
 Headline plot: `flow_vs_gt_agl_s5.png`. See `backend/CLAUDE.md` → Isaac Sim.
+
+**Ablations (2026-06-25, `_in/isaac-sim-20260624_2337`, scale 0.5, stride 5, LK; scripts
+were one-off in scratchpad, plots/`*.npz` saved in the dataset dir). Five findings:**
+
+1. **Self-triangulated AGL is CIRCULAR (don't deploy it).** Replacing the GT-pose "DEM"
+   in `compute_true_agl` with flow-odom's *own* estimated poses (Case B) cannot recover
+   metric scale — it only reaches self-consistency at whatever scale it's seeded near.
+   Cold-start (from baro) locks at scale ~0.73 (self-AGL median 50 m vs true 86 m);
+   warm-start *at* the correct answer (0.30%) **drifts away** (scale 1.17→1.22→1.28,
+   0.30%→1.19%). Bounded (0.9–1.5%, not km) but never metric. Same unobservability that
+   sinks OpenVINS — you need an **external** metric reference. Plot `flow_caseB_selfagl_s5.png`.
+
+2. **Front-end tracker barely matters; on RPE, ALIKED+LightGlue ≳ LK ≫ XFeat+LGdyn.**
+   Swapping LK for learned matchers (geometry/AGL/attitude fixed) keeps final ATE in a
+   0.2–0.5% band — depth (AGL) is the limiter, not correspondences. But **endpoint ATE is
+   misleading**: XFeat had the best *final* (3.9 m) yet **worst** KITTI-RPE drift (4.62%
+   avg) — its win was endpoint luck (scale 0.95 shrink + noisy steps cancelling). RPE
+   ranking (honest): ALIKED+LightGlue **2.20%** < LK **2.42%** ≪ XFeat **4.62%**. LK is
+   best accuracy-per-compute (≈90% of ALIKED at 2–4× the speed). Learned matchers only pay
+   off where LK *breaks* (wide gaps / low texture), which this clean 12.5 Hz sim doesn't
+   stress. Use RPE, not final ATE, to compare dead-reckoners. Plot `flow_track_RPE_compare.png`,
+   trajectories cached in `tracker_trajs.npz`.
+
+3. **A diverged OpenVINS run's ATTITUDE is also corrupted — can't rescue flow-odom.**
+   Hypothesis "OV position blows up but orientation stays observable, so feed OV attitude
+   into flow-odom" is **refuted**: over the OV window, OV attitude error vs GT is **51.6°
+   mean / 114° max** (stepwise jumps = real divergence, not a frame bug; both ItoG/GtoI
+   conventions tested) → 47% trajectory error. The Mahony **AHRS is far better (2.3° → 2.0%)**
+   and remains the right no-GT attitude source. MSCKF scale collapse contaminates yaw too.
+
+4. **AGL DEM keyed by VIO position has a FEEDBACK LOOP — prefer a rangefinder.** Looking up
+   the terrain DEM at the *drifting estimated* xy (Case A, the realistic DEM deployment)
+   instead of the true position costs ~12× with GT attitude (0.42%→**5.18%**) over this
+   steep terrain (AGL 1–145 m): drift→wrong DEM→wrong scale→more drift. Bounded but real.
+   A **downward rangefinder measures AGL directly with zero position dependence → no loop.**
+
+5. **Depth is the dominant limiter and it COMPOUNDS with attitude error.** Clean 2×2
+   (attitude {GT, AHRS} × depth {frame-AGL≈rangefinder, DEM@predicted}):
+
+   | | frame-AGL (≈rangefinder) | DEM@predicted |
+   |---|---|---|
+   | GT-att   | 0.42% | 5.18% |
+   | **AHRS** | **1.75%** | **12.76%** (all-deployable, no GT) |
+
+   Isolated cost vs 0.42% baseline: Mahony AHRS **+1.33 pp**, DEM@predicted **+4.77 pp**
+   (depth ~3.6× the bigger limiter). Crucially the two **compound super-additively**: AHRS+DEM
+   = **12.76%**, far above the ~6.5% you'd get if independent — attitude drift feeds the DEM
+   feedback loop. **Takeaway: a rangefinder (not a VIO-indexed DEM) is the key hardware
+   choice — it takes the no-GT result 12.76%→1.75% (~7×).** Mahony AHRS is the cheap, solved
+   part; keep it. Plot `hybrid_caseA_exp1.png`.
+
+**Deployable recipe (no GPS, no GT):** flow-odom (LK) + Mahony AHRS attitude + **metric AGL
+from a downward rangefinder** → ~1.75% over 1.8 km. Avoid: self-triangulated AGL (circular),
+DEM-by-VIO-position (feedback), OV attitude from a diverged run (corrupted).
