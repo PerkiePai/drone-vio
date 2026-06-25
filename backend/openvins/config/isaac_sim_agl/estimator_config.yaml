@@ -41,18 +41,21 @@ zupt_noise_multiplier: 10
 zupt_max_disparity: 1.0
 zupt_only_at_beginning: true
 
-# Barometer ENABLED for dataset 20260624.
-# Terrain is flat (Bangkok area, Cesium) — baro_relative = local_z within 0.1 m.
-# The bag's /baro_height = -(pressure_altitude_m - takeoff_baro_alt) which is
-# correct world-z-down altitude and matches poses.csv z within cm.
+# AGL DEPTH-PRIOR experiment (bag = isaac_sim_agl.bag, /baro_height = -true AGL).
+# We want OV's depth-prior to read the TRUE camera-to-ground depth (AGL) so it can
+# anchor monocular scale at altitude over deep terrain. But the SAME /baro_height
+# also drives the vertical position update — feeding AGL there would corrupt p_z.
+# So: keep use_baro:true (so baro_altitude_m, which the depth prior reads, updates)
+# but set baro_noise_std HUGE so the vertical Kalman update is inert. Net effect:
+# depth prior gets AGL; vertical position is left to vision+IMU.
 use_baro: true
-baro_noise_std: 0.3         # sim baro is clean; 0.3 m 1-sigma
+baro_noise_std: 1000000.0   # inert vertical update (we only want the depth-prior path)
 baro_chi2_multiplier: 1.0
 
-use_baro_in_init: false
-baro_init_sigma: 0.5        # loose during init (filter pose is uncertain); tighten if needed
+use_baro_in_init: false     # don't feed AGL into init as if it were altitude
+baro_init_sigma: 0.5
 
-fi_use_baro_depth_prior: false
+fi_use_baro_depth_prior: true   # set feature depth = AGL when triangulation fails (altitude)
 
 # ==================================================================
 # Initialization.  CRITICAL: init_max_disparity is the threshold ABOVE which

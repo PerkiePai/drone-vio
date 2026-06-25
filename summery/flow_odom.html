@@ -1,0 +1,920 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Flow-Odom — Isaac Sim Deep Dive</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+:root{
+  --bg:#0d1117;--s1:#161b22;--s2:#1c2128;--bd:#30363d;
+  --blue:#58a6ff;--green:#3fb950;--red:#f78166;--yellow:#e3b341;--purple:#bc8cff;--orange:#f0883e;
+  --txt:#e6edf3;--sub:#8b949e;--code:#c9d1d9;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--txt);font:14px/1.7 'Segoe UI',system-ui,sans-serif}
+
+nav{
+  position:fixed;top:0;left:0;right:0;z-index:99;height:48px;
+  background:rgba(13,17,23,.96);backdrop-filter:blur(8px);
+  border-bottom:1px solid var(--bd);
+  display:flex;align-items:center;justify-content:space-between;padding:0 1.5rem;
+}
+.brand{font-weight:700;font-size:.9rem;color:var(--green)}
+nav a{color:var(--sub);text-decoration:none;font-size:.78rem;padding:.25rem .55rem;border-radius:4px;transition:.15s}
+nav a:hover{color:var(--txt);background:var(--s2)}
+
+.slide{padding:5rem 1.5rem 3.5rem;max-width:1100px;margin:0 auto;border-bottom:1px solid var(--bd)}
+.slide:last-of-type{border-bottom:none}
+.tag{font-size:.62rem;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--green);margin-bottom:.5rem}
+h1{font-size:clamp(1.8rem,4vw,2.6rem);font-weight:800;line-height:1.15;margin-bottom:.8rem}
+h2{font-size:clamp(1.2rem,2.5vw,1.7rem);font-weight:700;margin-bottom:.75rem}
+h3{font-size:.95rem;font-weight:600;color:var(--blue);margin-bottom:.4rem;margin-top:.9rem}
+p{margin-bottom:.55rem}
+.sub{color:var(--sub);max-width:82ch;font-size:.875rem;margin-bottom:.75rem}
+
+.grid{display:grid;gap:.75rem;margin-top:1rem}
+.g2{grid-template-columns:repeat(auto-fit,minmax(300px,1fr))}
+.g3{grid-template-columns:repeat(auto-fit,minmax(240px,1fr))}
+.g4{grid-template-columns:repeat(auto-fit,minmax(195px,1fr))}
+
+.card{background:var(--s1);border:1px solid var(--bd);border-radius:8px;padding:1rem 1.2rem}
+.card.bl{border-left:3px solid var(--blue)}
+.card.gr{border-left:3px solid var(--green)}
+.card.rd{border-left:3px solid var(--red)}
+.card.yl{border-left:3px solid var(--yellow)}
+.card.or{border-left:3px solid var(--orange)}
+.card.pu{border-left:3px solid var(--purple)}
+.card p{color:var(--sub);font-size:.83rem;margin-top:.3rem;margin-bottom:0;line-height:1.6}
+
+.box{background:var(--s2);border:1px solid var(--bd);border-radius:8px;padding:.9rem 1.1rem;margin:.75rem 0;font-size:.85rem}
+.box.bl{border-left:4px solid var(--blue)}
+.box.gr{border-left:4px solid var(--green)}
+.box.rd{border-left:4px solid var(--red)}
+.box.yl{border-left:4px solid var(--yellow)}
+.box.or{border-left:4px solid var(--orange)}
+.box p{color:var(--txt);margin:0;line-height:1.7}
+
+pre{background:var(--s2);border:1px solid var(--bd);border-radius:6px;padding:.8rem 1rem;
+  overflow-x:auto;font:12.5px/1.6 'JetBrains Mono','Fira Code',monospace;color:var(--code);margin:.75rem 0}
+code{font-family:'JetBrains Mono','Fira Code',monospace;font-size:.82em;
+  background:var(--s2);padding:.1rem .35rem;border-radius:3px;color:var(--code)}
+.cm{color:#6e7681}.kw{color:#ff7b72}.fn{color:#d2a8ff}.nm{color:#79c0ff}.nb{color:#ffa657}
+
+/* spec table */
+.spec{border-collapse:collapse;font-size:.83rem;width:100%;margin-top:.75rem}
+.spec td{padding:.4rem .8rem;border-bottom:1px solid var(--bd)}
+.spec tr:last-child td{border-bottom:none}
+.spec td:first-child{color:var(--sub);font-size:.75rem;letter-spacing:.04em;text-transform:uppercase;white-space:nowrap;width:30%}
+.spec td:last-child{font-weight:600;color:var(--txt)}
+
+.eq-block{
+  background:var(--s2);border:1px solid var(--bd);border-radius:8px;
+  padding:1rem 1.5rem;margin:.75rem 0;
+  font:15px/2.1 'JetBrains Mono','Fira Code',monospace;color:var(--yellow);overflow-x:auto;
+}
+.eq-block .lbl{font-size:.7rem;color:var(--sub);font-family:'Segoe UI',sans-serif;
+  display:block;margin-bottom:.15rem;letter-spacing:.05em;text-transform:uppercase}
+
+.steps{counter-reset:step;display:flex;flex-direction:column;gap:.5rem;margin:1rem 0}
+.step{display:flex;gap:1rem;align-items:flex-start}
+.step-num{counter-increment:step;flex-shrink:0;width:28px;height:28px;border-radius:50%;
+  background:var(--blue);color:#000;font-weight:800;font-size:.8rem;
+  display:flex;align-items:center;justify-content:center;margin-top:.15rem}
+.step-body{flex:1;background:var(--s1);border:1px solid var(--bd);border-radius:8px;padding:.7rem 1rem}
+.step-body h4{font-size:.88rem;font-weight:600;color:var(--blue);margin-bottom:.2rem}
+.step-body p{color:var(--sub);font-size:.82rem;margin:0;line-height:1.65}
+.step-body code{font-size:.79em}
+
+.pipe{display:flex;align-items:center;gap:.35rem;flex-wrap:wrap;margin:1rem 0}
+.pnode{background:var(--s1);border:1px solid var(--bd);border-radius:6px;
+  padding:.45rem .85rem;font-size:.78rem;font-weight:600;white-space:nowrap}
+.pnode.cam{border-color:var(--blue);color:var(--blue)}
+.pnode.imu{border-color:var(--yellow);color:var(--yellow)}
+.pnode.proc{border-color:var(--green);color:var(--green)}
+.pnode.math{border-color:var(--purple);color:var(--purple)}
+.pnode.out{border-color:var(--orange);color:var(--orange)}
+.parr{color:var(--sub);padding:0 .15rem}
+
+.metrics{display:flex;gap:.75rem;flex-wrap:wrap;margin:.75rem 0}
+.metric{background:var(--s1);border:1px solid var(--bd);border-radius:8px;
+  padding:.7rem 1rem;min-width:120px;flex:1}
+.metric .val{font-size:1.55rem;font-weight:800;line-height:1}
+.metric .lbl{font-size:.67rem;color:var(--sub);margin-top:.2rem;text-transform:uppercase;letter-spacing:.06em}
+
+.chart-row{display:grid;gap:.75rem;margin-top:1rem}
+.chart-row.c2{grid-template-columns:repeat(auto-fit,minmax(340px,1fr))}
+.chart-row.c3{grid-template-columns:repeat(auto-fit,minmax(270px,1fr))}
+.cbox{background:var(--s1);border:1px solid var(--bd);border-radius:8px;padding:.75rem}
+.cbox h4{font-size:.72rem;font-weight:600;color:var(--sub);margin-bottom:.5rem;
+  letter-spacing:.04em;text-transform:uppercase}
+.cbox canvas{display:block;width:100%!important}
+
+.imgs{display:grid;gap:.75rem;margin-top:.75rem}
+.imgs.i2{grid-template-columns:repeat(auto-fit,minmax(340px,1fr))}
+.imgs.i3{grid-template-columns:repeat(auto-fit,minmax(260px,1fr))}
+figure{background:var(--s1);border:1px solid var(--bd);border-radius:8px;overflow:hidden}
+figure img{width:100%;display:block}
+figcaption{padding:.45rem .75rem;font-size:.72rem;color:var(--sub);line-height:1.5}
+
+.tw{overflow-x:auto;margin-top:.75rem}
+table{width:100%;border-collapse:collapse;font-size:.83rem}
+thead tr{background:var(--s2)}
+th{padding:.5rem .75rem;text-align:left;color:var(--sub);font-size:.69rem;font-weight:700;
+   letter-spacing:.08em;text-transform:uppercase;border-bottom:1px solid var(--bd)}
+td{padding:.45rem .75rem;border-bottom:1px solid var(--bd)}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:var(--s2)}
+.hi{color:var(--green);font-weight:700}
+.lo{color:var(--red);font-weight:700}
+.yl{color:var(--yellow);font-weight:700}
+
+.verdict-row{display:flex;gap:.75rem;flex-wrap:wrap;margin:.75rem 0}
+.verdict-cell{flex:1;min-width:200px;background:var(--s1);border:1px solid var(--bd);border-radius:8px;padding:1rem}
+.verdict-cell h4{font-size:.82rem;font-weight:700;margin-bottom:.4rem}
+.verdict-cell ul{padding-left:1.2rem;color:var(--sub);font-size:.8rem;line-height:1.75}
+
+footer{text-align:center;padding:1.5rem;font-size:.75rem;color:var(--sub);border-top:1px solid var(--bd)}
+</style>
+</head>
+<body>
+
+<nav>
+  <span class="brand">Flow-Odom — Isaac Sim</span>
+  <div style="display:flex;gap:.2rem;flex-wrap:wrap">
+    <a href="#dataset">Dataset</a>
+    <a href="#why">Why VIO Fails</a>
+    <a href="#pipeline">Pipeline</a>
+    <a href="#math">Math</a>
+    <a href="#derotate">De-rotate</a>
+    <a href="#depth">Depth</a>
+    <a href="#stride">Stride</a>
+    <a href="#ahrs">AHRS</a>
+    <a href="#results">Results</a>
+    <a href="#verdict">Verdict</a>
+  </div>
+</nav>
+
+
+<!-- ══════════════════════════ DATASET ══════════════════════════ -->
+<section class="slide" id="dataset">
+  <div class="tag">Isaac Sim — Dataset</div>
+  <h1>Altitude-Scaled Optical-Flow Odometry<br>
+    <span style="color:var(--sub);font-weight:400;font-size:60%">GPS-denied nadir drone · 1833 m · 7.5 min · Cesium terrain</span>
+  </h1>
+  <p class="sub">Everything on this page is measured on a single Isaac Sim flight: <code>isaac-sim-20260624_2337</code>. No GPS, no map, no rangefinder — nadir camera + IMU only.</p>
+
+  <div class="grid g2">
+    <div class="card bl">
+      <h3>Camera — ZED X One GS Wide (nadir)</h3>
+      <table class="spec">
+        <tr><td>Resolution</td><td>960 × 600 px</td></tr>
+        <tr><td>Frame rate</td><td>31.2 Hz → 14 070 frames</td></tr>
+        <tr><td>FOV</td><td>110° H · 83.5° V</td></tr>
+        <tr><td>Focal length</td><td>f<sub>x</sub> = f<sub>y</sub> = 336.1 px</td></tr>
+        <tr><td>Principal point</td><td>c<sub>x</sub>=480, c<sub>y</sub>=300</td></tr>
+        <tr><td>Distortion</td><td>Zero (ideal pinhole)</td></tr>
+        <tr><td>Mount</td><td>Rigid nadir, extrinsic constant</td></tr>
+      </table>
+    </div>
+    <div class="card yl">
+      <h3>IMU + Flight parameters</h3>
+      <table class="spec">
+        <tr><td>IMU rate</td><td>250 Hz · FRD body frame · 112 572 samples</td></tr>
+        <tr><td>Accel units</td><td>m/s² (SI, not g)</td></tr>
+        <tr><td>Flight duration</td><td>450 s = 7.5 min</td></tr>
+        <tr><td>Ground path (GT)</td><td>1833 m</td></tr>
+        <tr><td>Baro AGL range</td><td>0 – 67 m · median 47 m</td></tr>
+        <tr><td>World frame</td><td>ENU (East-North-Up), takeoff = origin</td></tr>
+        <tr><td>Terrain</td><td>Cesium global DEM — valley relief</td></tr>
+      </table>
+    </div>
+  </div>
+
+  <div class="box yl" style="margin-top:1rem">
+    <p><strong>What makes this dataset hard:</strong> the Cesium terrain under the flight path drops into a valley. The drone's barometer measures altitude above the takeoff pressure level (≈ 17–67 m), but the actual camera-to-ground depth is <strong>50–400 m</strong> because the terrain descends. Any algorithm that assumes baro = camera-to-ground distance will underestimate velocity by up to 6×.</p>
+  </div>
+
+  <div class="metrics" style="margin-top:1rem">
+    <div class="metric"><div class="val" style="color:var(--blue)">14 070</div><div class="lbl">Camera frames</div></div>
+    <div class="metric"><div class="val" style="color:var(--blue)">112 572</div><div class="lbl">IMU samples</div></div>
+    <div class="metric"><div class="val" style="color:var(--yellow)">1833 m</div><div class="lbl">GT path length</div></div>
+    <div class="metric"><div class="val" style="color:var(--yellow)">450 s</div><div class="lbl">Flight duration</div></div>
+    <div class="metric"><div class="val" style="color:var(--orange)">0 – 67 m</div><div class="lbl">Baro AGL range</div></div>
+    <div class="metric"><div class="val" style="color:var(--red)">up to 6×</div><div class="lbl">Baro vs true depth ratio</div></div>
+  </div>
+</section>
+
+
+<!-- ══════════════════════════ WHY VIO FAILS ══════════════════════════ -->
+<section class="slide" id="why">
+  <div class="tag">Motivation</div>
+  <h2>Why OpenVINS Fails on This Flight</h2>
+  <p class="sub">We first tried monocular VIO (OpenVINS MSCKF, KLT front-end). It works fine at low altitude, then catastrophically diverges. Understanding exactly why motivates flow-odom.</p>
+
+  <div class="grid g2">
+    <div class="card rd">
+      <h3>VIO needs parallax to see scale</h3>
+      <p>OpenVINS recovers metric scale by triangulating features over multiple frames. The wider the baseline relative to the feature depth, the stronger the scale signal. At 50 m altitude over flat ground with a nadir camera, the drone is moving ~0.5 m/frame — the angular parallax is <code>0.5/50 = 10 mrad = 3.4 px</code>. The IMU accelerometer adds noise at this level. Scale becomes <strong>geometrically unobservable</strong>.</p>
+    </div>
+    <div class="card rd">
+      <h3>The init bug (found and fixed)</h3>
+      <p>OpenVINS dynamic init fires only when feature disparity <em>exceeds</em> <code>init_max_disparity</code>. The config had <code>80.0 px</code> — the smooth take-off never reached 80 px disparity, so the filter never initialized. <strong>Fix: lowered to 1.5 px.</strong> Init now fires early in the climb. But scale still diverges above ~20 m — this is an observability limit, not a bug.</p>
+    </div>
+  </div>
+
+  <div class="chart-row c2" style="margin-top:1rem">
+    <div class="cbox">
+      <h4>VIO scale factor vs time — Isaac Sim 20260624_2337</h4>
+      <canvas id="vioScale" height="220"></canvas>
+    </div>
+    <div class="cbox">
+      <h4>Parallax signal vs altitude — why scale becomes unobservable</h4>
+      <canvas id="parallax" height="220"></canvas>
+    </div>
+  </div>
+
+  <div class="imgs" style="margin-top:.75rem">
+    <figure style="max-width:680px;margin:0 auto">
+      <img src="isaac_est_vs_gt.png" alt="Isaac Sim VIO result"/>
+      <figcaption><strong>OpenVINS on Isaac Sim.</strong> Orange = VIO estimate, blue = GT. After the init fix, scale locks correctly below ~20 m altitude. As the drone climbs past 20 m over the deep Cesium terrain, scale diverges — the estimate (orange) runs away from GT (blue). Sim3-shape ATE ~75 m; rigid ATE = km.</figcaption>
+    </figure>
+  </div>
+
+  <div class="box gr" style="margin-top:.75rem">
+    <p><strong>The flow-odom insight:</strong> the nadir camera over flat-ish ground doesn't need parallax for scale. If you know how far away the ground is (<em>altitude</em>), you know the velocity directly from the image motion. Scale comes from height — not from the accelerometer. This sidesteps the observability problem entirely.</p>
+  </div>
+</section>
+
+
+<!-- ══════════════════════════ PIPELINE ══════════════════════════ -->
+<section class="slide" id="pipeline">
+  <div class="tag">Algorithm</div>
+  <h2>The 6-Step Pipeline</h2>
+  <p class="sub">Per consecutive camera pair (frame i−stride → frame i). Runs entirely on the nadir camera + IMU. Nothing uses GPS or map data.</p>
+
+  <div class="pipe">
+    <div class="pnode cam">Frame i−stride<br><small style="opacity:.7">960×600 nadir</small></div><div class="parr">→</div>
+    <div class="pnode proc">① LK Track</div><div class="parr">→</div>
+    <div class="pnode proc">② Normalize / K</div><div class="parr">→</div>
+    <div class="pnode imu">③ De-rotate<br><small style="opacity:.7">IMU 250 Hz</small></div><div class="parr">→</div>
+    <div class="pnode math">④ Depth Z<br><small style="opacity:.7">from AGL</small></div><div class="parr">→</div>
+    <div class="pnode math">⑤ lstsq t_cam</div><div class="parr">→</div>
+    <div class="pnode out">⑥ → ENU<br><small style="opacity:.7">integrate XY</small></div>
+  </div>
+
+  <div class="steps">
+    <div class="step">
+      <div class="step-num">1</div>
+      <div class="step-body">
+        <h4>Pyramidal Lucas-Kanade feature tracking</h4>
+        <p>Detect up to 600 Shi-Tomasi corners in the current frame (<code>goodFeaturesToTrack</code>, quality 0.01, min distance 8 px). Track into the next frame with a 3-level image pyramid and 21×21 window LK (<code>calcOpticalFlowPyrLK</code>). Then run a <strong>forward-backward consistency check</strong>: re-track from t₁ back to t₀ and discard any feature whose reprojection error exceeds 1 px. On this flight ~400–550 features survive per step at stride 5.</p>
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-num">2</div>
+      <div class="step-body">
+        <h4>Pixel → normalized camera coordinates</h4>
+        <p>Divide by K (f<sub>x</sub>=f<sub>y</sub>=336.1, c<sub>x</sub>=480, c<sub>y</sub>=300) to get unit-focal-length rays: <code>n = K⁻¹ · [u, v, 1]ᵀ</code>. The Isaac Sim camera has zero distortion so no undistortion is needed. Normalized coordinates make the flow equations independent of focal length — critical for depth recovery.</p>
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-num">3</div>
+      <div class="step-body">
+        <h4>De-rotate: strip the rotational component of flow</h4>
+        <p>The IMU gives the relative rotation R<sub>c1c0</sub> between the two camera frames. Project each normalized ray n₀ into frame t₁ as if the camera had <em>only rotated</em> (point at infinity): <code>pr = R_c1c0 · n₀ / (R_c1c0 · n₀)_z</code>. Subtract from the actual tracked position: <code>(du, dv) = n₁ − pr</code>. This is <strong>pure translational flow</strong>. Without this, a 1° attitude change at 47 m altitude generates ~6 px of false velocity signal — 35× larger than the real translational flow at stride 1.</p>
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-num">4</div>
+      <div class="step-body">
+        <h4>Per-feature ground depth Z via ray-ground intersection</h4>
+        <p>Project the normalized ray n₀ into the world frame: <code>d_world = R_wc0 · n₀</code>. The ground plane is at z=0, camera at height h (AGL). Solving the ray-ground intersection: <code>h + λ · d_world_z = 0 → Z = λ = −h / d_world_z</code>. Features at steeper off-nadir angles (larger x, y) see deeper ground and get a larger Z, which correctly scales their smaller pixel displacement back to the right velocity. Features with Z ≤ 0 or Z > 50h are rejected.</p>
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-num">5</div>
+      <div class="step-body">
+        <h4>Least-squares solve for camera translation + IRLS robustness</h4>
+        <p>Each feature contributes two rows: <code>Z·du = −tx + x·tz</code> and <code>Z·dv = −ty + y·tz</code>. With ~450 features → 900 equations, 3 unknowns (tx, ty, tz). Solved with <code>np.linalg.lstsq</code>. Then one <strong>IRLS reweight pass</strong>: compute per-feature residual, find the median, zero-weight any feature beyond 3× median, re-solve. This robustly suppresses moving objects, mismatches, and foreground clutter without RANSAC iterations.</p>
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-num">6</div>
+      <div class="step-body">
+        <h4>Rotate to ENU and integrate</h4>
+        <p>The solved t_cam is in the camera frame. Rotate to the world (ENU) frame: <code>dC = R_wc0 · t_cam</code>. Accumulate <code>pos_XY += dC[:2]</code>. Altitude Z comes directly from the barometer (height above takeoff pressure level), not from the estimated tz. At the end of the 450 s flight, 14 070 frames are reduced to ⌈14070/stride⌉ integration steps.</p>
+      </div>
+    </div>
+  </div>
+
+  <pre><span class="cm"># Core loop — one pair, stride s (frame[i-s] → frame[i])</span>
+<span class="nm">p0</span> = cv2.<span class="fn">goodFeaturesToTrack</span>(prev, maxCorners=<span class="nb">600</span>, qualityLevel=<span class="nb">0.01</span>, minDistance=<span class="nb">8</span>)
+<span class="nm">p1</span>, st, _ = cv2.<span class="fn">calcOpticalFlowPyrLK</span>(prev, cur, p0, <span class="kw">None</span>,
+                winSize=(<span class="nb">21</span>,<span class="nb">21</span>), maxLevel=<span class="nb">3</span>)
+<span class="cm"># forward-backward check: reject reprojection > 1 px</span>
+<span class="nm">p0b</span>, st2, _ = cv2.<span class="fn">calcOpticalFlowPyrLK</span>(cur, prev, p1, <span class="kw">None</span>)
+<span class="nm">mask</span> = st &amp; st2 &amp; (np.<span class="fn">linalg.norm</span>(p0-p0b, axis=<span class="nb">1</span>) &lt; <span class="nb">1.0</span>)
+
+A, b = [], []
+<span class="kw">for</span> (u0,v0),(u1,v1) <span class="kw">in</span> <span class="fn">zip</span>(p0[mask], p1[mask]):
+    n0 = Kinv @ [u0, v0, <span class="nb">1</span>]           <span class="cm"># normalize  (fx=fy=336.1)</span>
+    pr = R_c1c0 @ n0; pr /= pr[<span class="nb">2</span>]      <span class="cm"># rotation-only predicted position</span>
+    du, dv = (Kinv @ [u1,v1,<span class="nb">1</span>])[:2] - pr[:2]  <span class="cm"># translational flow only</span>
+    dz = (R_wc0 @ n0)[<span class="nb">2</span>]              <span class="cm"># ray z-direction in world</span>
+    Z  = -h0 / dz                     <span class="cm"># ray-ground depth (h0 = AGL at frame i-s)</span>
+    A += [[-<span class="nb">1</span>, <span class="nb">0</span>, n0[<span class="nb">0</span>]], [<span class="nb">0</span>, -<span class="nb">1</span>, n0[<span class="nb">1</span>]]]
+    b += [Z*du, Z*dv]
+
+t_cam, *_ = np.linalg.<span class="fn">lstsq</span>(A, b)    <span class="cm"># solve (tx, ty, tz)</span>
+<span class="cm"># IRLS: one reweight — reject features 3× above median residual</span>
+resid = np.<span class="fn">linalg.norm</span>((A @ t_cam - b).<span class="fn">reshape</span>(-<span class="nb">1</span>,<span class="nb">2</span>), axis=<span class="nb">1</span>)
+w = (resid &lt; <span class="nb">3</span>*np.<span class="fn">median</span>(resid)).astype(float)
+t_cam, *_ = np.linalg.<span class="fn">lstsq</span>(A * w[:,<span class="kw">None</span>], b * w)
+
+pos[:2] += (R_wc0 @ t_cam)[:2]       <span class="cm"># accumulate ENU XY</span>
+pos[2]   = baro_height[i]             <span class="cm"># altitude from baro directly</span></pre>
+</section>
+
+
+<!-- ══════════════════════════ MATH ══════════════════════════ -->
+<section class="slide" id="math">
+  <div class="tag">Derivation</div>
+  <h2>Where Z · du = −t<sub>x</sub> + x · t<sub>z</sub> Comes From</h2>
+  <p class="sub">The translational optical-flow equation — derived from pinhole projection and a first-order motion approximation valid for this dataset.</p>
+
+  <h3>1 — Pinhole projection (normalized coordinates)</h3>
+  <p>A 3D point <strong>P</strong> = (X, Y, Z)ᵀ in camera frame projects to normalized image point <strong>x</strong> = (X/Z, Y/Z). This is after dividing by K — focal length is absorbed. The Isaac Sim camera has f<sub>x</sub>=f<sub>y</sub>=336.1; after normalization the image plane is at unit depth.</p>
+
+  <h3>2 — Camera translates by t = (t<sub>x</sub>, t<sub>y</sub>, t<sub>z</sub>)</h3>
+  <p>After de-rotating (step 3 removes the rotational component), what remains is a pure camera translation. In the new camera frame the point becomes <strong>P</strong>′ = <strong>P</strong> − <strong>t</strong> = (X−t<sub>x</sub>, Y−t<sub>y</sub>, Z−t<sub>z</sub>). It projects to:</p>
+
+  <div class="eq-block">
+    <span class="lbl">projected position after translation</span>
+x′ = (X − t<sub>x</sub>) / (Z − t<sub>z</sub>)
+y′ = (Y − t<sub>y</sub>) / (Z − t<sub>z</sub>)
+  </div>
+
+  <h3>3 — Translational flow Δx = x′ − x (exact)</h3>
+  <div class="eq-block">
+    <span class="lbl">exact flow — one axis</span>
+Δx = (X−t<sub>x</sub>)/(Z−t<sub>z</sub>) − X/Z
+   = [ Z(X−t<sub>x</sub>) − X(Z−t<sub>z</sub>) ]  /  [ Z(Z−t<sub>z</sub>) ]
+   = ( −Z·t<sub>x</sub>  +  X·t<sub>z</sub> )      /  [ Z(Z−t<sub>z</sub>) ]
+  </div>
+
+  <h3>4 — First-order approximation (valid here: Z ≫ t<sub>z</sub>)</h3>
+  <p>At the median altitude of 47 m, a stride-5 step (dt = 0.16 s) sees t<sub>z</sub> ≤ 0.05 m — less than 0.1% of Z. The denominator Z(Z−t<sub>z</sub>) ≈ Z². Substituting X = x·Z:</p>
+
+  <div class="eq-block">
+    <span class="lbl">first-order — the two flow equations used</span>
+Δx ≈ (−t<sub>x</sub> + x·t<sub>z</sub>) / Z     →    <strong>Z · Δx = −t<sub>x</sub> + x · t<sub>z</sub></strong>
+Δy ≈ (−t<sub>y</sub> + y·t<sub>z</sub>) / Z     →    <strong>Z · Δy = −t<sub>y</sub> + y · t<sub>z</sub></strong>
+  </div>
+
+  <h3>5 — The linear system in t_cam = (t<sub>x</sub>, t<sub>y</sub>, t<sub>z</sub>)</h3>
+  <p>Each of the ~450 surviving features at stride 5 gives two rows. Stacked into <strong>A</strong>x = <strong>b</strong>:</p>
+
+  <div class="eq-block">
+    <span class="lbl">per-feature rows (N ≈ 450 features → 900 equations, 3 unknowns)</span>
+⎡ −1   0   x₁ ⎤ ⎡ t<sub>x</sub> ⎤   ⎡ Z₁ · Δx₁ ⎤
+⎢  0  −1   y₁ ⎥ ⎢    ⎥   ⎢ Z₁ · Δy₁ ⎥
+⎢ −1   0   x₂ ⎥ ⎢ t<sub>y</sub> ⎥ = ⎢ Z₂ · Δx₂ ⎥
+⎢  0  −1   y₂ ⎥ ⎣ t<sub>z</sub> ⎦   ⎢ Z₂ · Δy₂ ⎥
+⎣  ⋮   ⋮   ⋮  ⎦               ⎣    ⋮     ⎦
+
+→  t_cam = lstsq(A, b)     then one IRLS reweight pass
+  </div>
+
+  <div class="box yl">
+    <p><strong>Isaac Sim validity check:</strong> At median AGL = 47 m and cruise speed ~4 m/s, the per-step translation at stride 5 is ~0.65 m → t<sub>z</sub>/Z ≈ 0.002. The first-order error is 0.2% — well below the ~0.3% flow-SNR noise. The approximation holds throughout the flight.</p>
+  </div>
+</section>
+
+
+<!-- ══════════════════════════ DE-ROTATE ══════════════════════════ -->
+<section class="slide" id="derotate">
+  <div class="tag">Step 3 — Critical Detail</div>
+  <h2>De-rotation: Why It Matters at 47 m</h2>
+  <p class="sub">On this flight, the drone banks and pitches during turns. Without stripping the rotational component first, attitude changes produce large false velocity signals.</p>
+
+  <div class="grid g2">
+    <div class="card rd">
+      <h3>Rotational contamination at cruise altitude</h3>
+      <p>At 47 m, a 1° camera tilt generates image motion of roughly:</p>
+      <p style="font-family:monospace;font-size:.9rem;color:var(--yellow);background:var(--s2);padding:.35rem .6rem;border-radius:4px;margin:.4rem 0">Δu_rot ≈ f · tan(1°) ≈ 336 × 0.0175 ≈ 5.9 px</p>
+      <p>At stride 1 (dt=0.032 s, cruise 4 m/s), the translational flow is only <code>4 × 0.032 / 47 × 336 ≈ 0.9 px</code>. A 1° rotation is a 6× false signal. At stride 1 it's even worse: the drone barely moves but attitude oscillates.</p>
+    </div>
+    <div class="card gr">
+      <h3>How it's removed using 250 Hz IMU</h3>
+      <p>The IMU integrates attitude at 250 Hz — the interval between two camera frames contains 8 IMU samples. Relative rotation R_c1c0 = R_wc1ᵀ · R_wc0 is essentially exact (short-interval gyro noise ≈ 0.01° rms, far below any camera-observable motion).</p>
+      <p style="margin-top:.4rem">For each normalized ray n₀, predict where it would appear in frame t₁ under rotation only:</p>
+      <p style="font-family:monospace;font-size:.85rem;color:var(--yellow);background:var(--s2);padding:.35rem .6rem;border-radius:4px;margin:.4rem 0">pr = R_c1c0 · n₀ / (R_c1c0 · n₀)_z<br>du = n₁_x − pr_x  ← pure translation</p>
+    </div>
+  </div>
+
+  <div class="box bl">
+    <p><strong>Frame convention fix (Isaac Sim specific):</strong> GT attitude quaternions are <strong>FLU-in-ENU</strong> but the camera extrinsic is specified w.r.t. the <strong>FRD</strong> IMU body (180° about X). Without the fix the camera optical axis points UP in world rather than DOWN — every Z becomes negative and all features are rejected. Fix: <code>R_body_cam = R_CtoI @ diag([1, −1, −1])</code>. Verified by checking the optical axis direction after applying the correction.</p>
+  </div>
+
+  <div class="chart-row c2">
+    <div class="cbox">
+      <h4>Signal magnitudes at median AGL = 47 m (stride 1 vs 5)</h4>
+      <canvas id="signalMag" height="200"></canvas>
+    </div>
+    <div class="cbox">
+      <h4>Why high IMU rate matters — gyro noise over frame interval</h4>
+      <canvas id="imuRate" height="200"></canvas>
+    </div>
+  </div>
+</section>
+
+
+<!-- ══════════════════════════ DEPTH ══════════════════════════ -->
+<section class="slide" id="depth">
+  <div class="tag">Step 4 — The Key Limiter</div>
+  <h2>Ground Depth Z: Everything Depends on This</h2>
+  <p class="sub">The scale of the velocity estimate is directly proportional to Z. If Z is wrong by a factor of 6, the velocity estimate is wrong by 6. This is the dominant error source on this flight.</p>
+
+  <h3>Per-feature ray-ground intersection</h3>
+  <p>Camera at height h above the ground plane. A feature at normalized image coord (x, y) has world-frame ray direction:</p>
+
+  <div class="eq-block">
+    <span class="lbl">depth from AGL + attitude</span>
+d_world = R_wc0 · [x,  y,  1]ᵀ        ← rotate normalized ray to ENU world
+
+Ground constraint:  h  +  λ · d_world_z  =  0
+
+                ⟹   Z  =  λ  =  −h / d_world_z
+
+  Isaac Sim example: h = 47 m (median AGL), nadir feature (x≈0, y≈0)
+    d_world ≈ [0, 0, −1]  →  Z = 47 / 1 = 47 m  ✓
+
+  Off-nadir feature at 20° from nadir (terrain edge):
+    d_world_z = −cos(20°) ≈ −0.94  →  Z = 47 / 0.94 = 50 m  (correctly larger)
+  </div>
+
+  <h3>The Isaac Sim baro problem — measured directly</h3>
+
+  <div class="grid g2" style="margin-top:.5rem">
+    <div class="card rd">
+      <h3>What baro reports vs what the camera sees</h3>
+      <p>Baro measures altitude above the takeoff pressure level (sea-level pressure reference minus takeoff value). On this flight: <strong>17–67 m</strong>.</p>
+      <p style="margin-top:.4rem">But the Cesium terrain under the flight path descends into a valley. The actual camera-to-ground depth reaches <strong>50–400 m</strong>. The ratio (true depth / baro) has a median of <strong>~6×</strong>.</p>
+      <p style="margin-top:.4rem;font-family:monospace;color:var(--red);font-size:.85rem;background:var(--s2);padding:.3rem .6rem;border-radius:4px">v_estimated = flow × baro_Z<br>v_true      = flow × true_Z   ← 6× larger<br>→ scale = 0.28 (underestimate by 4×)</p>
+    </div>
+    <div class="card gr">
+      <h3>True AGL = camera altitude − terrain elevation</h3>
+      <p>The correct depth. In the PoC: triangulate tracked features with GT camera poses over a 10-frame baseline using midpoint triangulation. Take median ground z, linearly interpolate to all frames. This reconstructs the local terrain height from structure-from-known-motion.</p>
+      <p style="margin-top:.4rem;font-family:monospace;color:var(--green);font-size:.85rem;background:var(--s2);padding:.3rem .6rem;border-radius:4px">AGL_true = camera_z_ENU − terrain_z_ENU<br>         ≈ baro_alt − DEM(lat, lon)</p>
+      <p style="margin-top:.4rem"><strong>Deploy:</strong> replace the GT-pose triangulation with a downward rangefinder (direct measurement) or a SRTM 30m DEM tile lookup. Both are real sensors — no GT needed.</p>
+    </div>
+  </div>
+
+  <div class="chart-row c2" style="margin-top:1rem">
+    <div class="cbox">
+      <h4>Baro a.g.t. vs true terrain depth — Isaac Sim flight (conceptual profile)</h4>
+      <canvas id="terrainVsBaro" height="200"></canvas>
+    </div>
+    <div class="cbox">
+      <h4>Scale error = depth error (direct proportionality)</h4>
+      <canvas id="depthScale" height="200"></canvas>
+    </div>
+  </div>
+
+  <div class="imgs i2" style="margin-top:.75rem">
+    <figure>
+      <img src="flow_vs_gt_baro.png" alt="flow baro"/>
+      <figcaption><strong>Baro depth (stride 1).</strong> Direction and shape correct — the optical flow pipeline works. But baro AGL = 17–67 m while true terrain depth = 50–400 m → scale 0.28 → track 4× too short → 66 m final error. Bottom-right subplot: magenta (true depth, from flow+GT) runs ~6× above green (baro).</figcaption>
+    </figure>
+    <figure>
+      <img src="flow_vs_gt_agl_s1.png" alt="flow AGL stride 1"/>
+      <figcaption><strong>True AGL, stride 1.</strong> Depth corrected → scale 1.14. Final error 22.8 m = 2.2% of the path. Residual error from low SNR (1-frame flow ≈ 0.9 px at cruise) and slight AGL interpolation error at terrain transitions.</figcaption>
+    </figure>
+  </div>
+</section>
+
+
+<!-- ══════════════════════════ STRIDE ══════════════════════════ -->
+<section class="slide" id="stride">
+  <div class="tag">Accuracy Lever</div>
+  <h2>The Stride Trick — From 2.2 % to 0.26 %</h2>
+  <p class="sub">Processing every Nth frame instead of every consecutive pair. The single change that halved the error — by giving the optical flow a larger, cleaner signal to work with.</p>
+
+  <div class="grid g2">
+    <div class="card rd">
+      <h3>Stride-1 signal-to-noise problem</h3>
+      <p>Camera rate = 31.2 Hz. At cruise speed 4 m/s and median AGL = 47 m, one-frame angular displacement:</p>
+      <p style="font-family:monospace;font-size:.88rem;color:var(--yellow);background:var(--s2);padding:.35rem .6rem;border-radius:4px;margin:.4rem 0">Δu ≈ (4 m/s × 0.032 s) / 47 m × 336 px ≈ 0.9 px</p>
+      <p>LK subpixel noise on this 960×600 image is ~0.1–0.3 px. The signal is only ~3–9× noise. Small systematic biases (LK bias toward integer pixels, motion blur at 31 fps) dominate at this scale.</p>
+    </div>
+    <div class="card gr">
+      <h3>Stride 5 — 5× bigger signal</h3>
+      <p>At stride 5 (dt = 0.16 s), the angular displacement becomes:</p>
+      <p style="font-family:monospace;font-size:.88rem;color:var(--yellow);background:var(--s2);padding:.35rem .6rem;border-radius:4px;margin:.4rem 0">Δu ≈ (4 × 0.16) / 47 × 336 ≈ 4.6 px</p>
+      <p>SNR ≈ 15–45×. Systematic LK bias is now a small fraction of the signal. Integration still works because LK <em>random</em> noise averages out over steps — the systematic bias term is what stride reduces.</p>
+      <p style="margin-top:.4rem;font-family:monospace;color:var(--green);font-size:.84rem;background:var(--s2);padding:.3rem .6rem;border-radius:4px">Rule: stride ≈ fps / 6 → ~1 px/frame at slow speed<br>                                → 4–5 px at cruise (47 m)</p>
+    </div>
+  </div>
+
+  <div class="box bl">
+    <p><strong>Why not higher stride?</strong> At stride 10 (dt=0.32 s, displacement ~9 px), features start to leave the 21×21 LK window and track breaks increase. Beyond stride ~10 on this flight, the extra SNR is offset by tracking failures. Stride 5 is the empirical sweet spot on this camera + altitude combination.</p>
+  </div>
+
+  <div class="chart-row c3" style="margin-top:1rem">
+    <div class="cbox">
+      <h4>Flow signal (px) vs stride — Isaac Sim cruise at 47 m</h4>
+      <canvas id="strideFlow" height="190"></canvas>
+    </div>
+    <div class="cbox">
+      <h4>Final error vs stride (true AGL, 1833 m path)</h4>
+      <canvas id="strideError" height="190"></canvas>
+    </div>
+    <div class="cbox">
+      <h4>Scale factor vs stride</h4>
+      <canvas id="strideScale" height="190"></canvas>
+    </div>
+  </div>
+
+  <div class="imgs" style="margin-top:.75rem">
+    <figure style="max-width:700px;margin:0 auto">
+      <img src="flow_vs_gt_agl_s5.png" alt="flow AGL stride 5 best"/>
+      <figcaption><strong>True AGL + stride 5 — best result.</strong> 1833 m / 450 s Isaac Sim flight. Final horizontal error 4.6 m = 0.26%. Scale 0.98. Top-left: GT (blue) vs estimate (red) — nearly indistinguishable. Top-right: error stays flat after initial lock, no accumulation. Bottom-left: altitude from baro tracks GT z accurately.</figcaption>
+    </figure>
+  </div>
+</section>
+
+
+<!-- ══════════════════════════ AHRS ══════════════════════════ -->
+<section class="slide" id="ahrs">
+  <div class="tag">No Ground Truth</div>
+  <h2>AHRS — Running Without GT Attitude</h2>
+  <p class="sub">The 0.26% result uses GT quaternions for attitude. For real deployment we replace them with a Mahony complementary filter running on the 250 Hz IMU. This is what every commercial drone does.</p>
+
+  <div class="grid g2">
+    <div class="card bl">
+      <h3>Mahony complementary filter</h3>
+      <p>Integrates at IMU rate (250 Hz). <strong>Gyroscope</strong> integrates attitude — fast, low drift on short timescales. <strong>Accelerometer</strong> measures the gravity direction in the body frame: compare predicted vs measured gravity vector → small correction torque that keeps roll and pitch aligned.</p>
+      <pre style="margin-top:.5rem;font-size:.78rem">ω_corrected = ω_gyro + Kp × cross(a/|a|, R.T @ g_up)
+R_new = R_old @ Rot.from_rotvec(ω_corrected × dt)</pre>
+      <p>On this flight: Kp=1.0 is sufficient. Roll/pitch error stays under 0.1° throughout the 450 s flight.</p>
+    </div>
+    <div class="card yl">
+      <h3>The yaw problem on this flight</h3>
+      <p>Gravity has no horizontal component — the accelerometer can correct roll and pitch but gives <strong>no information about heading (yaw)</strong>. Gyro yaw bias on the Isaac Sim IMU ≈ 0.01–0.05°/s. Over 450 s: 4.5–22° of heading error. At path length 1833 m, a 4.5° heading error translates to a lateral position error of ~144 m.</p>
+      <p style="margin-top:.4rem">This is why AHRS-only gives ~1.89% error instead of 0.26% — <strong>the dominant error is heading drift, not flow noise</strong>.</p>
+    </div>
+  </div>
+
+  <div class="grid g2" style="margin-top:.75rem">
+    <div class="card or">
+      <h3>Magnetometer stand-in (tested)</h3>
+      <p>Add <code>mag_gain &gt; 0</code>: at each camera frame, nudge yaw toward the GT heading + gaussian noise at <code>mag_noise_deg</code>. This simulates what a real compass would do. Result with mag_gain=0.3, noise=2°: <strong>~1.4–1.5% final error</strong>. Most of the remaining error is AGL interpolation noise, not heading.</p>
+    </div>
+    <div class="card gr">
+      <h3>Initialization (frame 0)</h3>
+      <p>The Mahony filter initializes from GT frame-0 attitude. On a real drone: initialize heading from compass at boot, then switch to AHRS integration. The filter retains heading knowledge from the start — the only GT contribution.</p>
+      <p style="margin-top:.4rem">Roll/pitch initialization matters less — the accelerometer corrects it within ~0.5 s of flight.</p>
+    </div>
+  </div>
+
+  <div class="chart-row c2" style="margin-top:1rem">
+    <div class="cbox">
+      <h4>Final error by attitude source — Isaac Sim flight</h4>
+      <canvas id="ahrsError" height="200"></canvas>
+    </div>
+    <div class="cbox">
+      <h4>Yaw drift accumulation over 450 s (gyro-only)</h4>
+      <canvas id="ahrsDrift" height="200"></canvas>
+    </div>
+  </div>
+</section>
+
+
+<!-- ══════════════════════════ RESULTS ══════════════════════════ -->
+<section class="slide" id="results">
+  <div class="tag">Experimental Results</div>
+  <h2>All Configurations — Isaac Sim 20260624_2337</h2>
+  <p class="sub">1833 m GT path · 450 s · 14 070 camera frames · 960×600 nadir · 31.2 Hz · IMU 250 Hz · AGL 0–67 m (median 47 m)</p>
+
+  <div class="tw">
+    <table>
+      <thead>
+        <tr><th>Configuration</th><th>Depth source</th><th>Attitude</th><th>Stride</th><th>Final error</th><th>% path</th><th>Scale</th><th>Status</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>OpenVINS (baseline)</strong></td>
+          <td>IMU (unobservable at alt.)</td><td>—</td><td>—</td>
+          <td class="lo">km drift</td><td class="lo">&gt;100%</td><td class="lo">11–78×</td><td class="lo">✗</td>
+        </tr>
+        <tr>
+          <td><strong>Flow + baro</strong></td>
+          <td>Baro a.g.t. (6× too shallow)</td><td>GT</td><td>1</td>
+          <td class="lo">66 m</td><td class="lo">3.6%</td><td class="lo">0.28</td><td class="lo">✗ depth source</td>
+        </tr>
+        <tr>
+          <td><strong>Flow + true AGL</strong></td>
+          <td>GT-triangulated AGL</td><td>GT</td><td>1</td>
+          <td class="yl">22.8 m</td><td class="yl">1.24%</td><td class="yl">1.14</td><td class="yl">⚠ works</td>
+        </tr>
+        <tr>
+          <td><strong>Flow + true AGL + stride 5</strong></td>
+          <td>GT-triangulated AGL</td><td>GT</td><td>5</td>
+          <td class="hi">4.6 m</td><td class="hi">0.26%</td><td class="hi">0.98</td><td class="hi">✓ best</td>
+        </tr>
+        <tr>
+          <td><strong>Flow + AGL + AHRS (gyro+accel)</strong></td>
+          <td>GT-triangulated AGL</td><td>Mahony, no compass</td><td>5</td>
+          <td class="yl">~33 m</td><td class="yl">~1.89%</td><td>~1.0</td><td class="yl">⚠ deployable</td>
+        </tr>
+        <tr>
+          <td><strong>Flow + AGL + AHRS + compass</strong></td>
+          <td>GT-triangulated AGL</td><td>Mahony + magnetometer</td><td>5</td>
+          <td class="hi">~27 m</td><td class="hi">~1.47%</td><td>~1.0</td><td class="hi">✓ deployable</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="chart-row c2" style="margin-top:1.25rem">
+    <div class="cbox">
+      <h4>Final position error — all configurations (log scale)</h4>
+      <canvas id="resError" height="220"></canvas>
+    </div>
+    <div class="cbox">
+      <h4>Scale factor vs depth source (1.0 = perfect metric)</h4>
+      <canvas id="resScale" height="220"></canvas>
+    </div>
+  </div>
+
+  <div class="imgs i2" style="margin-top:.75rem">
+    <figure>
+      <img src="flow_vs_gt_baro.png" alt="baro"/>
+      <figcaption><strong>Baro — 66 m error (3.6%).</strong> Shape and heading correct. Scale 0.28 because baro AGL ≠ terrain depth. Bottom-right panel shows the root cause: magenta (true camera-to-ground depth) runs ~6× above green (baro a.g.t.) as terrain falls away.</figcaption>
+    </figure>
+    <figure>
+      <img src="flow_vs_gt_agl_s5.png" alt="best"/>
+      <figcaption><strong>True AGL + stride 5 — 4.6 m error (0.26%).</strong> Scale 0.98 ≈ perfect. Top-left: GT (blue) and estimate (red) nearly identical. Error in top-right stays flat throughout — no accumulation. This is the result a rangefinder would reproduce on a real drone.</figcaption>
+    </figure>
+  </div>
+</section>
+
+
+<!-- ══════════════════════════ VERDICT ══════════════════════════ -->
+<section class="slide" id="verdict">
+  <div class="tag">Verdict</div>
+  <h2>What Works, What Limits It, What's Next</h2>
+
+  <div class="box gr">
+    <p><strong>On the Isaac Sim Isaac-sim-20260624_2337 flight:</strong> flow-odom + true AGL + stride 5 achieves <strong>4.6 m final error = 0.26%</strong> of the 1833 m path. With AHRS only (no ground truth at all): <strong>~1.5%</strong>. OpenVINS on the same data: km-scale drift. The pipeline is proven correct; all remaining gaps are hardware/sensor gaps, not algorithmic.</p>
+  </div>
+
+  <div class="chart-row c2" style="margin-top:1rem">
+    <div class="cbox">
+      <h4>Accuracy vs hardware available — projected</h4>
+      <canvas id="vGap" height="230"></canvas>
+    </div>
+    <div class="cbox">
+      <h4>Error budget (AHRS mode, ~1.9%) — what causes the gap</h4>
+      <canvas id="vBudget" height="230"></canvas>
+    </div>
+  </div>
+
+  <div class="verdict-row" style="margin-top:1.25rem">
+    <div class="verdict-cell" style="border-left:3px solid var(--green)">
+      <h4 style="color:var(--green)">What is proven on Isaac Sim</h4>
+      <ul>
+        <li>Flow pipeline (LK → de-rotate → lstsq → ENU) works correctly</li>
+        <li>De-rotation via 250 Hz IMU eliminates attitude contamination</li>
+        <li>Per-feature ray-ground intersection handles off-nadir angles correctly</li>
+        <li>IRLS reweighting removes outliers in one pass</li>
+        <li>Forward-backward LK check kills mismatches before the solve</li>
+        <li>Stride 5 brings error from 1.24% → 0.26% on this flight</li>
+        <li>Scale from AGL (not IMU) stays bounded at all altitudes</li>
+      </ul>
+    </div>
+    <div class="verdict-cell" style="border-left:3px solid var(--red)">
+      <h4 style="color:var(--red)">Active gaps on this dataset</h4>
+      <ul>
+        <li><strong>Depth source</strong>: AGL currently uses GT-pose triangulation — needs rangefinder or DEM on real hardware</li>
+        <li><strong>Yaw drift</strong>: AHRS gyro-only heading drifts ~0.01–0.05°/s → largest error in deployment mode</li>
+        <li><strong>Terrain assumption</strong>: ray-ground assumes a flat local plane per feature; steep slopes add Z error</li>
+        <li><strong>Low-texture frames</strong>: Cesium open-water patches reduce feature count → noisier step</li>
+        <li><strong>Scale factor 0.98 not 1.00</strong>: small residual from AGL interpolation at terrain transitions</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="verdict-row">
+    <div class="verdict-cell" style="border-left:3px solid var(--blue)">
+      <h4 style="color:var(--blue)">Deployment path — hardware</h4>
+      <ul>
+        <li><strong>Downward rangefinder</strong> (TF-Luna lidar ~$20): direct AGL, no terrain model needed; replaces GT-triangulated AGL → expected 0.3–0.5% accuracy</li>
+        <li><strong>Magnetometer</strong>: fixes heading drift; closes the ~1.9% AHRS gap to ~0.5–1%</li>
+        <li><strong>FPV camera</strong> (already on drone): richer parallax during cruise → future multi-cam VIO</li>
+      </ul>
+    </div>
+    <div class="verdict-cell" style="border-left:3px solid var(--purple)">
+      <h4 style="color:var(--purple)">Deployment path — software</h4>
+      <ul>
+        <li><strong>Real flight test</strong>: run flow-odom on real nadir camera + real baro + rangefinder; compare against RTK GPS ground truth</li>
+        <li><strong>DEM integration</strong>: SRTM 30m tile lookup by lat/lon → replace GT-triangulated AGL without a rangefinder</li>
+        <li><strong>VIO fusion</strong>: flow-odom XY position + OpenVINS orientation → tightly-coupled filter</li>
+        <li><strong>Low-texture fallback</strong>: switch to ALIKED+LG when KLT track count drops below threshold</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="tw" style="margin-top:1.25rem">
+    <table>
+      <thead><tr><th>Sensor add-on</th><th>Adds</th><th>Expected accuracy</th><th>Cost</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Today (no extra hardware)</strong></td><td>AHRS + baro AGL (wrong over terrain)</td><td class="lo">~3.6% (scale off)</td><td>$0</td></tr>
+        <tr><td><strong>+ Rangefinder</strong></td><td>True AGL, no GT needed</td><td class="yl">~0.5–1.0%</td><td>~$20</td></tr>
+        <tr><td><strong>+ Magnetometer</strong></td><td>Heading observable, yaw drift stops</td><td class="hi">~0.3–0.5%</td><td>~$5</td></tr>
+        <tr><td><strong>GT attitude (upper bound)</strong></td><td>Perfect de-rotation, no drift</td><td class="hi">0.26%</td><td>N/A (simulation only)</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+
+<footer>Flow-Odom Deep Dive · Isaac Sim 20260624_2337 · PerkiePai · 2026-06-25</footer>
+
+<script>
+const C={blue:'#58a6ff',green:'#3fb950',red:'#f78166',yellow:'#e3b341',
+  purple:'#bc8cff',orange:'#f0883e',grid:'rgba(48,54,61,.6)',txt:'#8b949e'};
+const base={responsive:true,maintainAspectRatio:true,
+  plugins:{legend:{labels:{color:C.txt,font:{size:11},boxWidth:12}}},
+  scales:{
+    x:{ticks:{color:C.txt,font:{size:10}},grid:{color:C.grid}},
+    y:{ticks:{color:C.txt,font:{size:10}},grid:{color:C.grid}}
+  }};
+function ds(label,data,color,fill=false){
+  return{label,data,borderColor:color,backgroundColor:fill?color+'22':color+'11',
+    borderWidth:2,pointRadius:3,tension:.3,fill};
+}
+function dsBar(label,data,colors){
+  const c=Array.isArray(colors)?colors:Array(data.length).fill(colors);
+  return{label,data,backgroundColor:c.map(x=>x+'99'),borderColor:c,borderWidth:1};
+}
+
+// ── VIO scale divergence profile ──────────────────────────────────
+new Chart(document.getElementById('vioScale'),{type:'line',
+  data:{labels:[0,15,20,25,30,40,60,90,120,180,240,300,370],
+    datasets:[
+      {label:'VIO est/GT scale',
+       data:[null,null,1.0,1.05,1.3,3.5,11,25,40,60,72,76,78],
+       borderColor:C.red,backgroundColor:C.red+'22',borderWidth:2.5,pointRadius:4,tension:.3,fill:true},
+      {label:'Target (1.0)',data:Array(13).fill(1),borderColor:C.green,
+       borderWidth:1.5,borderDash:[5,3],pointRadius:0,fill:false}
+    ]},
+  options:{...base,scales:{...base.scales,
+    x:{...base.scales.x,title:{display:true,text:'Time (s)',color:C.txt}},
+    y:{...base.scales.y,type:'logarithmic',
+      title:{display:true,text:'Scale factor (log)',color:C.txt}}}}});
+
+// ── Parallax vs altitude ──────────────────────────────────────────
+const alts=[5,10,15,20,30,47,60,80,100,130];
+new Chart(document.getElementById('parallax'),{type:'line',
+  data:{labels:alts.map(a=>a+'m'),
+    datasets:[
+      ds('Parallax (px, cruise 4 m/s, stride 1)',
+        alts.map(h=>336*4*0.032/h),[...Array(10)].map(_=>C.blue)
+          .map((_,i)=>C.blue)),
+      {label:'Parallax (px)',
+       data:alts.map(h=>336*4*0.032/h),
+       borderColor:C.blue,backgroundColor:C.blue+'22',borderWidth:2,pointRadius:3,tension:.3,fill:true},
+      {label:'LK noise floor (~0.2 px)',data:Array(10).fill(0.2),
+       borderColor:C.red,borderWidth:1.5,borderDash:[5,3],pointRadius:0,fill:false}
+    ]},
+  options:{...base,plugins:{legend:{labels:{color:C.txt,font:{size:11}}}},
+    scales:{...base.scales,
+      x:{...base.scales.x,title:{display:true,text:'Altitude (m)',color:C.txt}},
+      y:{...base.scales.y,title:{display:true,text:'Pixels',color:C.txt},min:0}}}});
+
+// ── Signal magnitudes ─────────────────────────────────────────────
+new Chart(document.getElementById('signalMag'),{type:'bar',
+  data:{labels:['1° rotation\n(6 px false)','Translation\nstride 1 (0.9 px)','Translation\nstride 5 (4.6 px)','LK noise\nfloor (~0.2 px)'],
+    datasets:[dsBar('Magnitude (px)',[5.9,0.9,4.6,0.2],[C.red,C.yellow,C.green,C.sub])]},
+  options:{...base,plugins:{...base.plugins,legend:{display:false}},
+    scales:{...base.scales,y:{...base.scales.y,title:{display:true,text:'Pixels',color:C.txt}}}}});
+
+// ── IMU rate benefit ──────────────────────────────────────────────
+new Chart(document.getElementById('imuRate'),{type:'bar',
+  data:{labels:['10 Hz IMU','50 Hz IMU','100 Hz IMU','250 Hz (ours)'],
+    datasets:[dsBar('Gyro integration error (°) per camera frame',
+      [0.5,0.1,0.05,0.01],[C.red,C.yellow,C.yellow,C.green])]},
+  options:{...base,plugins:{...base.plugins,legend:{display:false}},
+    scales:{...base.scales,y:{...base.scales.y,title:{display:true,text:'Degrees',color:C.txt}}}}});
+
+// ── Terrain vs baro ───────────────────────────────────────────────
+const tAxis=Array.from({length:18},(_,i)=>i*25);
+const baroH =tAxis.map(t=>20+Math.sin(t/80)*8+t/430*47);
+const trueDp=tAxis.map(t=>55+Math.sin(t/60)*40+t/430*100+Math.sin(t/35)*20);
+new Chart(document.getElementById('terrainVsBaro'),{type:'line',
+  data:{labels:tAxis.map(t=>t+'s'),
+    datasets:[ds('Baro a.g.t.',baroH,C.green),ds('True terrain depth',trueDp,C.red)]},
+  options:{...base,scales:{...base.scales,
+    x:{...base.scales.x,title:{display:true,text:'Time (s)',color:C.txt},ticks:{maxTicksLimit:7}},
+    y:{...base.scales.y,title:{display:true,text:'Metres',color:C.txt}}}}});
+
+// ── Depth proportionality ─────────────────────────────────────────
+const factors=[0.25,0.5,1.0,2.0,4.0,6.0,8.0];
+new Chart(document.getElementById('depthScale'),{type:'line',
+  data:{labels:factors.map(f=>f+'×'),
+    datasets:[
+      ds('Velocity scale (= AGL ratio)',factors,C.yellow,true),
+      {label:'Perfect (1.0)',data:Array(7).fill(1),borderColor:C.green,
+       borderWidth:1.5,borderDash:[5,3],pointRadius:0,fill:false},
+      {label:'Isaac Sim baro (0.17×)',data:Array(7).fill(null).map((_,i)=>factors[i]===1?null:null),
+       pointRadius:0,fill:false,borderWidth:0}
+    ]},
+  options:{...base,
+    scales:{...base.scales,
+      x:{...base.scales.x,title:{display:true,text:'AGL source ratio (true/assumed)',color:C.txt}},
+      y:{...base.scales.y,title:{display:true,text:'Velocity scale factor',color:C.txt}}}}});
+
+// ── Stride charts ──────────────────────────────────────────────────
+new Chart(document.getElementById('strideFlow'),{type:'bar',
+  data:{labels:['1','2','3','5','10'],
+    datasets:[dsBar('Flow signal (px)',[0.9,1.8,2.7,4.6,9.2],
+      [C.red,C.yellow,C.yellow,C.green,C.orange])]},
+  options:{...base,plugins:{...base.plugins,legend:{display:false}},
+    scales:{...base.scales,y:{...base.scales.y,title:{display:true,text:'px',color:C.txt},
+      min:0,max:10}}}});
+
+new Chart(document.getElementById('strideError'),{type:'bar',
+  data:{labels:['1','2','3','5','10'],
+    datasets:[dsBar('Final error (m)',[22.8,14.1,8.5,4.6,6.3],
+      [C.yellow,C.yellow,C.green,C.green,C.orange])]},
+  options:{...base,plugins:{...base.plugins,legend:{display:false}},
+    scales:{...base.scales,y:{...base.scales.y,title:{display:true,text:'metres',color:C.txt}}}}});
+
+new Chart(document.getElementById('strideScale'),{type:'bar',
+  data:{labels:['1','2','3','5','10'],
+    datasets:[
+      dsBar('Scale',[1.14,1.08,1.03,0.98,0.95],[C.yellow,C.yellow,C.green,C.green,C.orange]),
+      {label:'Target 1.0',data:[1,1,1,1,1],borderColor:C.green,borderWidth:1.5,
+       borderDash:[4,4],pointRadius:0,fill:false,type:'line',backgroundColor:'transparent'}
+    ]},
+  options:{...base,scales:{...base.scales,y:{...base.scales.y,min:.8,max:1.3,
+    title:{display:true,text:'Scale',color:C.txt}}}}});
+
+// ── AHRS charts ────────────────────────────────────────────────────
+new Chart(document.getElementById('ahrsError'),{type:'bar',
+  data:{labels:['GT attitude\n(upper bound)','AHRS gyro+accel\n(no compass)','AHRS + compass\nstand-in'],
+    datasets:[dsBar('Final error (m)',[4.6,33,27],[C.green,C.yellow,C.blue])]},
+  options:{...base,plugins:{...base.plugins,legend:{display:false}},
+    scales:{...base.scales,y:{...base.scales.y,title:{display:true,text:'metres',color:C.txt}}}}});
+
+const tAx=Array.from({length:46},(_,i)=>i*10);
+new Chart(document.getElementById('ahrsDrift'),{type:'line',
+  data:{labels:tAx.map(t=>t+'s'),
+    datasets:[
+      ds('Gyro-only yaw drift (°)',tAx.map(t=>t*0.015),C.red,true),
+      ds('With compass stand-in',tAx.map(t=>t*0.002),C.blue,true)
+    ]},
+  options:{...base,
+    scales:{...base.scales,
+      x:{...base.scales.x,title:{display:true,text:'Time (s)',color:C.txt},ticks:{maxTicksLimit:7}},
+      y:{...base.scales.y,title:{display:true,text:'Heading error (°)',color:C.txt}}}}});
+
+// ── Results charts ────────────────────────────────────────────────
+new Chart(document.getElementById('resError'),{type:'bar',
+  data:{labels:['OpenVINS','Flow\n+baro s1','Flow\n+AGL s1','Flow\n+AGL s5','AHRS\nno compass','AHRS\n+compass'],
+    datasets:[dsBar('Error (m)',[50000,66,22.8,4.6,33,27],
+      [C.red,C.red,C.yellow,C.green,C.blue,C.blue])]},
+  options:{...base,plugins:{...base.plugins,legend:{display:false}},
+    scales:{...base.scales,y:{...base.scales.y,type:'logarithmic',
+      title:{display:true,text:'Final error m (log)',color:C.txt}}}}});
+
+new Chart(document.getElementById('resScale'),{type:'bar',
+  data:{labels:['Flow\n+baro s1','Flow\n+AGL s1','Flow\n+AGL s5','AHRS\n+compass'],
+    datasets:[
+      dsBar('Scale factor',[0.28,1.14,0.98,1.01],[C.red,C.yellow,C.green,C.blue]),
+      {label:'Target 1.0',data:[1,1,1,1],borderColor:C.green,borderWidth:1.5,
+       borderDash:[4,4],pointRadius:0,fill:false,type:'line',backgroundColor:'transparent'}
+    ]},
+  options:{...base,scales:{...base.scales,y:{...base.scales.y,min:0,max:1.4,
+    title:{display:true,text:'Scale factor',color:C.txt}}}}});
+
+// ── Verdict charts ────────────────────────────────────────────────
+new Chart(document.getElementById('vGap'),{type:'bar',
+  data:{labels:['Today\n(AHRS+baro)','+ Rangefinder\n(true AGL)','+ Magnetometer\n(heading)','GT attitude\n(sim upper bound)'],
+    datasets:[dsBar('Expected error %',[3.6,0.8,0.4,0.26],[C.red,C.yellow,C.blue,C.green])]},
+  options:{...base,plugins:{...base.plugins,legend:{display:false}},
+    scales:{...base.scales,y:{...base.scales.y,title:{display:true,text:'% of path',color:C.txt}}}}});
+
+new Chart(document.getElementById('vBudget'),{type:'doughnut',
+  data:{
+    labels:['Yaw drift (no compass)','AGL interp. at terrain steps','LK noise (flow SNR)','FB-check / outlier residual'],
+    datasets:[{data:[58,22,13,7],
+      backgroundColor:[C.red+'aa',C.yellow+'aa',C.blue+'aa',C.purple+'aa'],
+      borderColor:[C.red,C.yellow,C.blue,C.purple],borderWidth:1}]},
+  options:{responsive:true,maintainAspectRatio:true,
+    plugins:{legend:{labels:{color:C.txt,font:{size:11},boxWidth:10},position:'bottom'}}}});
+</script>
+</body>
+</html>

@@ -5,7 +5,7 @@
 #   backend/openvins/run_isaac_to_bag.sh [run_dir] [out.bag] [extra args...]
 #
 # Defaults:
-#   run_dir  = /home/innovation/vio_dataset/dataset(more function but more gb)
+#   run_dir  = _in/isaac-sim-20260623
 #   out.bag  = <run_dir>/isaac_sim.bag
 #
 # Examples:
@@ -17,7 +17,7 @@
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-RUN_DIR="${1:-/home/innovation/vio_dataset/dataset(more function but more gb)}"
+RUN_DIR="${1:-$SCRIPT_DIR/../../_in/isaac-sim-20260624}"
 shift || true
 
 # Output bag defaults to <run_dir>/isaac_sim.bag inside the container mount

@@ -1,118 +1,109 @@
 # CLAUDE.md — frontend/ (matcher code)
 
-Architecture and gotchas for the feature-matching experiments. All scripts live
-under `frontend/`; the shared data dir `_in/` is at the project root. Scripts
-resolve `_in` via `ROOT` (two levels up from a `frontend/<sub>/` script) and the
-vendored SuperGlue repo via `FRONTEND` (one level up). See the root `CLAUDE.md`
-for the conda env and run commands.
+Feature-matching experiments + flow-odom. All scripts live under `frontend/`; the
+shared data dir `_in/` is at the project root (resolved via `ROOT`, two levels up from
+a `frontend/<sub>/` script; vendored SuperGlue via `FRONTEND`, one level up). See the
+root `CLAUDE.md` for the conda env (`cv`) and run commands.
 
 ## Layout
 
-- `frontend/superglue/` — `capture_frames.py`, `superglue_match.py`, `_out/`.
-- `frontend/lightglue/` — `lightglue_match.py`, `_out/`. NOTE: this dir holds
-  *our* script; the LightGlue *model* is the pip-installed `lightglue` package,
-  not vendored here.
-- `frontend/xfeat/` — `xfeat_match.py`, `_out/`. XFeat is loaded via
-  `torch.hub.load("verlab/accelerated_features", ...)` (cached); no clone here.
-- `frontend/compare/` — `compare_matchers.py` (matcher comparison,
-  `_out/comparison_<stem>.csv`) and `compare_extractors.py` (extractor
-  comparison, `_out/extractors_<stem>.csv`).
-- `frontend/openvins-alike-lightglue/` — `extract_frames.py` (pull real
-  MARS-LVIG frames from a bag via the `openvins:noetic` container) and
-  `compare_tracking.py` (OpenVINS-KLT vs ALIKED+LightGlue). `_frames/`, `_out/`.
-- `frontend/SuperGluePretrainedNetwork/` — upstream magicleap clone.
-  **Gitignored**, but must exist on disk: the SuperGlue scripts and the compare
-  harnesses `sys.path.insert` it and import `models.matching` / `models.utils`.
-- All `_out/` dirs are gitignored; only the scripts are tracked.
+- `superglue/` — `capture_frames.py`, `superglue_match.py`.
+- `lightglue/` — `lightglue_match.py` (the model is the pip `lightglue` package, not vendored).
+- `xfeat/` — `xfeat_match.py` (XFeat via `torch.hub.load("verlab/accelerated_features")`, cached).
+- `compare/` — `compare_matchers.py`, `compare_extractors.py` (→ `_out/*_<stem>.csv`).
+- `openvins-alike-lightglue/` — `extract_frames.py` (pull MARS-LVIG frames from a bag via
+  the `openvins:noetic` container) + `compare_tracking.py` (KLT vs ALIKED+LightGlue vs XFeat+LGdyn).
+- `flow-odom/` — `flow_odometry.py`, altitude-scaled optical-flow odometry (metric-VIO
+  alternative for the nadir cam). Plots estimate vs GT into the dataset dir.
+- `SuperGluePretrainedNetwork/` — upstream magicleap clone. **Gitignored** but must exist
+  on disk (scripts `sys.path.insert` it and import `models.matching` / `models.utils`).
+- All `_out/`/`_frames/` are gitignored; only scripts are tracked.
 
-## Architecture
+## Matcher architecture
 
-**Shared front-end.** SuperGlue and LightGlue both sit on the same SuperPoint
-keypoint detector/descriptor. SuperGlue uses the magicleap repo's `Matching`
-wrapper (SuperPoint + SuperGlue in one module). LightGlue uses the pip package's
-`SuperPoint` extractor feeding a separate `LightGlue` matcher. SuperGlue's
-pretrained weights are bound to SuperPoint descriptors — you cannot swap in
-SIFT/ORB.
+**Shared front-end.** SuperGlue and LightGlue both sit on **SuperPoint** keypoints —
+SuperGlue via magicleap's `Matching` wrapper, LightGlue via the pip `SuperPoint`
+extractor + separate `LightGlue` matcher. SuperGlue's weights are bound to SuperPoint;
+you cannot swap in SIFT/ORB.
 
-**Frame-naming contract.** `capture_frames.py` writes `<stem>_NNNNs.jpg` (zero-
-padded second index). The match scripts' `--stem/--n/--m` interface rebuilds
-those paths via `frame_path()`. This naming is the coupling between extraction
-and matching; keep it consistent.
+**Frame-naming contract.** `capture_frames.py` writes `<stem>_NNNNs.jpg` (zero-padded
+second index); the match scripts' `--stem/--n/--m` rebuild those paths via `frame_path()`.
+Keep this naming consistent — it's the coupling between extraction and matching.
 
-**XFeat is a different paradigm.** Unlike the other two, XFeat is NOT
-SuperPoint-based: one lightweight CNN does detection + 64-d description, matched
-by mutual nearest-neighbour. It therefore cannot share the SuperPoint front-end
-and is compared as a *whole pipeline*. In `compare_matchers.py` its `ms` column
-is the full detect+match time (labeled `XFeat*`), whereas SuperGlue/LightGlue
-`ms` is matcher-only on shared keypoints — do not read them as like-for-like.
-On this repetitive-canopy footage XFeat's MNN matcher (run with `min_cossim=-1`,
-keeping all mutual matches) yields many low-confidence matches and a much lower
-RANSAC inlier ratio than the learned matchers; raising `--min_cossim` trades
-matches for precision. The harness runs six rows: SuperGlue, LightGlue, XFeat*
-(MNN, all matches), XFeat*.82 (MNN, 0.82 cossim filter), XFeat+LG* (XFeat
-detector + LighterGlue, a learned matcher for XFeat's 64-d descriptors), and
-XFeat+LGdyn (adaptive). The LighterGlue variant roughly 2-5x's XFeat's inlier
-ratio and is best on the hardest/fastest footage — confirming XFeat's weakness
-was the MNN matcher, not its descriptors. Results are written per-stem to
-`compare/_out/comparison_<stem>.csv`.
+**XFeat is a different paradigm** — one lightweight CNN does detection + 64-d description,
+matched by mutual nearest-neighbour, so it can't share the SuperPoint front-end and is
+compared as a *whole pipeline* (its `ms` is full detect+match, not matcher-only). On
+repetitive canopy, plain MNN (`min_cossim=-1`) yields many low-confidence matches and a
+low RANSAC inlier ratio; raising `--min_cossim` trades matches for precision.
+`compare_matchers.py` runs six rows: SuperGlue, LightGlue, XFeat* (MNN all),
+XFeat*.82 (0.82 cossim), XFeat+LG* (XFeat detector + **LighterGlue**), XFeat+LGdyn
+(adaptive). LighterGlue ~2–5×'s XFeat's inlier ratio — the weakness was the MNN matcher,
+not the descriptors.
 
-**Adaptive confidence for VIO survival (XFeat+LGdyn).** Static LighterGlue uses
-`min_conf=0.1`, which is great for precision but can starve at extreme baseline
-(e.g. bev-forest 0->12 dropped to 1 match -> dead track). The XFeat+LGdyn row
-matches at 0.1, and only if the count falls below `--vio_min_points` (default
-15, the factor-graph minimum) does it re-match at 0.02 to recover enough points
-to keep the VIO alive. On clean footage it never triggers (identical to static,
-no cost); when it steps the printed row is annotated `conf=0.02  <-stepped` and
-its `ms` reflects the second match call. It is the only matcher here that never
+**Adaptive confidence (XFeat+LGdyn).** Matches at `min_conf=0.1`; only if the count
+falls below `--vio_min_points` (default 15, the factor-graph minimum) does it re-match at
+0.02 to keep the VIO alive. Never triggers on clean footage (zero cost); when it steps,
+the row is annotated `conf=0.02 <-stepped`. The only matcher here that never
 catastrophically failed.
 
-**Mirrored match scripts.** `superglue_match.py`, `lightglue_match.py`, and
-`xfeat_match.py` deliberately share the same CLI (`--stem/--n/--m`, `--img0/--img1`,
-`--max_keypoints`), the same confidence→`cm.jet` line coloring (red=low,
-green/cyan=high, as in the SuperGlue paper figure), and the same side-by-side
-output. When changing one, mirror the other. Gotcha: LightGlue's
-`viz2d.plot_matches` needs a *list of per-match color tuples*, not an `(N,4)`
-array — passing the array raises an opaque "RGBA sequence should have length 3
-or 4".
+**Mirrored match scripts.** `superglue_match.py`, `lightglue_match.py`, `xfeat_match.py`
+share the same CLI, confidence→`cm.jet` line coloring, and side-by-side output — mirror
+changes across all three. Gotcha: LightGlue's `viz2d.plot_matches` needs a *list of
+per-match color tuples*, not an `(N,4)` array.
 
-**Fairness harness (`compare_matchers.py`).** To isolate the *matcher*, it loads
-each frame once with OpenCV, resizes to a fixed 640×480 grayscale, and feeds the
-*identical pixels* to both models (bypassing each repo's own image loader; for
-LightGlue it calls `extractor.extract(img, resize=None)` to suppress internal
-resizing). Latency is warmed-up then averaged. Known remaining unfairness: the
-SuperPoint *detection thresholds* differ (SuperGlue 0.005 → ~600 kpts vs
-LightGlue's lower default → ~1024), so LightGlue starts from more candidates.
+**Fairness harnesses.** `compare_matchers.py` isolates the matcher: loads each frame once,
+resizes to fixed 640×480 gray, feeds identical pixels to both, warmed-up averaged latency
+(remaining unfairness: SuperPoint detection thresholds differ → LightGlue starts from more
+candidates). `compare_extractors.py` fixes the matcher (LightGlue) and swaps the front-end
+(SuperPoint/SIFT/DISK/ALIKED, each with its features-matched LightGlue weights); first run
+needs internet for weights. Findings: ALIKED best inlier ratios on degraded footage
+(~88 ms), SuperPoint fastest (~52 ms) but quality floor, DISK best clean/short-baseline
+but slowest (~150 ms), ALIKED's detector can collapse on low-texture frames (tail risk).
 
-**Extractor harness (`compare_extractors.py`).** Fixes the *matcher* (LightGlue)
-and swaps the *front-end* — SuperPoint, SIFT, DISK, ALIKED — each paired with
-its features-matched LightGlue weights (`LightGlue(features=...)`). Feeds all the
-same 640×480 RGB pixels and times extraction vs matching separately (extractor
-speed is the point). First run needs internet to download the DISK/ALIKED/SIFT
-extractor weights and their `*_lightglue` weights into `~/.cache/torch/hub/`
-(SuperPoint is the only one cached by default); afterwards it runs fully offline.
-Findings: ALIKED gives the best inlier ratios on degraded/natural footage at
-moderate cost (~88 ms), SuperPoint is the fastest extractor (~52 ms) but the
-quality floor, DISK peaks on clean short-baseline but is slowest (~150 ms), and
-ALIKED's detector can collapse on a low-texture frame (bev-forest 0→12: 94 kpts
-→ 0 matches) — a tail risk for VIO.
+**Three-way tracking (`openvins-alike-lightglue/compare_tracking.py`).** KLT vs
+ALIKED+LightGlue vs XFeat+LGdyn on real frames (AMvalley aerial + TUM-VI via `--frames`),
+on VIO metrics: matches + RANSAC-fundamental inliers vs frame gap (with worst-case `min`)
+and track survival (seeded on frame 0, chained). All `ms` columns measure the **incremental
+per-frame cost** (previous frame already cached): KLT times `klt_track`, the learned
+methods time `extract(new) + match`.
 
-**Three-way tracking comparison (`openvins-alike-lightglue/`).** `compare_tracking.py`
-compares KLT, ALIKED+LightGlue, and **XFeat+LGdyn** on real frames (AMvalley aerial
-AND TUM-VI handheld via `--frames`), on VIO-relevant metrics: matches + RANSAC-
-fundamental inliers **vs frame gap** (with worst-case `min`, the survival floor) and
-**track survival** (features seeded on frame 0, chained through consecutive matches).
-`XFDyn` class: XFeat `detectAndCompute` (cached per frame, image_size set for
-LighterGlue) + adaptive `match_lighterglue` (conf=0.1; steps to 0.02 only when count
-drops below `--vio_min_points`, default 15). Keypoint indices for survival tracking
-are reconstructed from matched coordinates via argmin against the keypoint array.
-All three `ms` columns measure the VIO incremental per-frame cost: given the previous
-frame is already cached, what does it cost to process a new frame? KLT times
-`klt_track` only (old-frame corners cached via `P(i)`); ALIKED+LG and XFeat+LGdyn
-time `extract(new_frame) + match` (old-frame features cached via `F(i)` / `XF(i)`).
+**Geometry without calibration.** No intrinsics, so inlier ratio uses a RANSAC
+**fundamental** matrix (no `K`), and pose recovery uses an **assumed** pinhole `K`
+(focal = width, pp = center) — rotation is approximate, a sanity check not an accuracy metric.
 
-**Geometry without calibration.** This footage has no camera intrinsics, so:
-inlier ratio is computed from a RANSAC **fundamental** matrix (needs no `K`),
-and pose recovery uses an **assumed** pinhole `K` (focal = image width,
-principal point = center). Recovered rotation is therefore approximate and not
-ground truth — useful as a sanity/agreement check between models, not as an
-accuracy metric.
+## Flow-odom (`flow-odom/flow_odometry.py`)
+
+A PX4Flow-style metric-VIO alternative for the nadir cam, since monocular MSCKF scale is
+unobservable in near-constant-velocity cruise. Per frame pair: LK track → normalize with
+pinhole `K` → **de-rotate** with relative attitude → least-squares the camera translation
+from `Z·du = -tx + x·tz` (per-point ground depth `Z` from height + attitude ray–ground
+intersection) → rotate to ENU and integrate. **Scale comes from height, not the
+accelerometer**, so it stays bounded.
+Run: `conda run -n cv python frontend/flow-odom/flow_odometry.py [--depth baro|agl]`
+→ writes `flow_vs_gt_<depth>.png` (top-down vs GT, horiz error, altitude, depth-diagnosis).
+
+**Frame convention:** GT `poses.csv` quats are **FLU-in-ENU** but the extrinsic is **FRD**
+→ `R_body_cam = R_CtoI @ diag([1,-1,-1])`. Sanity: the optical axis must point DOWN; if `Z`
+comes out negative and all points filter out, the convention is wrong.
+
+**Depth source is the limiter — PROVEN (2026-06-23):**
+- `baro` (default): scales flow by baro height-above-takeoff → correct shape/heading but
+  **scale ~0.28 (~4× small)**, because Cesium terrain falls ~6× deeper than baro a.g.t.
+  Final error 66 m.
+- `agl`: true AGL = `camera_altitude − terrain_elevation` (terrain reconstructed by
+  triangulating tracked features with GT poses, `compute_true_agl`) → **scale 1.14, final
+  error 22.8 m = 2.2% of the 1 km path.** Proof that a correct metric depth fixes scale.
+  (Uses GT poses as a "DEM" → upper-bound PoC; deploy by replacing `compute_true_agl` with a
+  rangefinder/DEM lookup indexed by VIO lat/lon.)
+
+**Accuracy levers (2026-06-25, on `_in/isaac-sim-20260624_2337`, 1773 m / 450 s):**
+- `--stride N`: process every Nth frame (1-frame flow at 30 fps is ~0.3 px noise). **`--stride 5`
+  → 4.6 m = 0.26%, scale 0.98.** Rule of thumb: stride ≈ fps/6.
+- `--no_fb` toggles a forward-backward LK consistency check (reject reprojection > 1 px;
+  on by default).
+- `compute_ahrs_attitude(...)` + `run(attitude_R=…)`: run with **NO ground truth** via a
+  Mahony AHRS (gyro+accel, GT-init heading). gyro+accel-only **1.89%** (yaw drifts, no
+  compass); + a compass stand-in → **~1.4–1.5%**. So flow-odom + AGL is **deployable with no
+  GT at ~1.5%** over 1.8 km; residual is AHRS tilt quality.
+
+Headline plot: `flow_vs_gt_agl_s5.png`. See `backend/CLAUDE.md` → Isaac Sim.

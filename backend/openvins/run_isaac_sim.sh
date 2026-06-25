@@ -15,10 +15,11 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
-BAG_PATH="${1:-/home/innovation/vio_dataset/dataset(more function but more gb)/isaac_sim.bag}"
+BAG_PATH="${1:-$SCRIPT_DIR/../../_in/isaac-sim-20260624/isaac_sim.bag}"
 PLAY_RATE="${2:-1.0}"
+CONFIG_SUB="${3:-isaac_sim}"          # config subdir under config/ (e.g. isaac_sim_agl)
 
-CONFIG_DIR="$SCRIPT_DIR/config/isaac_sim"
+CONFIG_DIR="$SCRIPT_DIR/config/$CONFIG_SUB"
 OUT_DIR="$SCRIPT_DIR/_out"; mkdir -p "$OUT_DIR"
 
 [ -f "$BAG_PATH" ] || { echo "ERROR: bag not found: $BAG_PATH"; echo "Run: backend/openvins/run_isaac_to_bag.sh first"; exit 1; }
@@ -62,8 +63,9 @@ docker run --rm \
     rosbag play -r $PLAY_RATE --clock /bag_dir/$BAG_FILE >/dev/null 2>&1
 
     sleep 5
+    cp /tmp/est.log /out/est_isaac.log || true
     echo '=== init / status ==='
-    grep -aE 'successful init|baro|BARO|velocity =' /tmp/est.log | tail -5
+    grep -aE 'successful init|baro|BARO|velocity =' /tmp/est.log | tail -8
 
-    echo '>>> done. Trajectory: backend/openvins/_out/traj_est_isaac.txt'
+    echo '>>> done. Trajectory: backend/openvins/_out/traj_est_isaac.txt  Log: backend/openvins/_out/est_isaac.log'
   "
