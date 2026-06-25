@@ -15,6 +15,9 @@ root `CLAUDE.md` for the conda env (`cv`) and run commands.
   the `openvins:noetic` container) + `compare_tracking.py` (KLT vs ALIKED+LightGlue vs XFeat+LGdyn).
 - `flow-odom/` — `flow_odometry.py`, altitude-scaled optical-flow odometry (metric-VIO
   alternative for the nadir cam). Plots estimate vs GT into the dataset dir.
+- `geoloc/` — `dsmac_match.py`, DSMAC-style vision-only **absolute** geo-localization
+  (nadir frame ↔ satellite ortho). The drift-free *global* layer complementing flow-odom's
+  drifting *local* odometry. Downloads/caches an Esri ortho into `_in/<dataset>/ortho_tiles`.
 - `SuperGluePretrainedNetwork/` — upstream magicleap clone. **Gitignored** but must exist
   on disk (scripts `sys.path.insert` it and import `models.matching` / `models.utils`).
 - All `_out/`/`_frames/` are gitignored; only scripts are tracked.
@@ -161,3 +164,46 @@ were one-off in scratchpad, plots/`*.npz` saved in the dataset dir). Five findin
 **Deployable recipe (no GPS, no GT):** flow-odom (LK) + Mahony AHRS attitude + **metric AGL
 from a downward rangefinder** → ~1.75% over 1.8 km. Avoid: self-triangulated AGL (circular),
 DEM-by-VIO-position (feedback), OV attitude from a diverged run (corrupted).
+
+## DSMAC vision-only geo-localization (`geoloc/dsmac_match.py`)
+
+The **drift-free, scale-free** complement to flow-odom. Instead of integrating motion (which
+needs metric AGL and drifts), it matches each nadir frame against a **pre-stored satellite
+ortho** and reads off **absolute** position — the monocular-scale problem is *bypassed*, not
+solved. (TERCOM/DSMAC lineage; this is the "global fix" in the SPRIN-D odometry+map-matching
+particle-filter pattern. Closest paper: *Altitude-Adaptive Vision-Only Geo-Localization for
+UAVs*, arXiv 2602.23872.)
+
+Per frame: de-rotate by `-yaw`, scale by `AGL/fx/GSD` to the ortho's m/px, ALIKED+LightGlue
+match, RANSAC-homography the frame centre onto the ortho, pixel→ENU, score vs `geo.csv`.
+Reference map = Esri World Imagery tiles (no key) stitched over the geo.csv footprint, cached
+in `_in/<dataset>/ortho_tiles`.
+
+**Result (2026-06-25, `_in/isaac-sim-20260624_2337`, 60 frames vs a 3072² ortho @ 0.29 m/px,
+Bangkok):** match rate **55%** (33/60), abs-position error **median 13.8 m** (mean 11.2, p90
+14.7, max 21.1), **100% of matches < 30 m**. Failures are over low-texture/repetitive ground
+(parks, uniform rooftops) — mirrors the paper's ~50% real-flight R@1; successes are decisive
+(100–160 inliers). Plot `dsmac_geoloc.png`.
+
+**vs the flow-odom baseline — they fix opposite weaknesses, so FUSE them:**
+
+| | flow-odom (local) | DSMAC (global) |
+|---|---|---|
+| Output | relative metric odometry | absolute position |
+| Accuracy | **1.75%** (≈8–30 m over 1.8 km, best-case 0.42%) | **~14 m**, flat |
+| Drift | accumulates (crosses 100 m only ~6 km out) | **none** — re-anchors every fix |
+| Needs | metric AGL (rangefinder) | a reference satellite map |
+| Coverage | every frame | only textured ground (~55%) |
+| Scale problem | the core challenge | **bypassed** |
+
+Flow-odom is locally tighter but drifts; DSMAC is coarser but never drifts and needs no
+rangefinder. **Fused** (flow-odom propagates between fixes, DSMAC resets drift where texture
+allows) = smooth + metric + bounded, **no GPS / no lidar / no rangefinder**. This is the full
+two-layer stack, both halves validated on the same flight.
+
+**Prototype caveats:** uses GT for the per-frame search-window centre + heading (validates the
+matching *core*; deployed, those come from flow-odom dead-reckoning + AHRS) and `agl_cache.npz`
+for warp scale (rough baro/flatness suffices — RANSAC tolerates scale error far better than
+flow-odom integration). Domain gap is mild here because Cesium renders *from* satellite tiles;
+real camera vs Esri is harder (the paper's 77%→50% drop). `geoloc/` + `ortho_tiles/` cache are
+under gitignored `_in/`; only the script is tracked.
