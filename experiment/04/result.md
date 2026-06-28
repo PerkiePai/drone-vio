@@ -17,27 +17,16 @@
 2. **`flow_odometry.py` `_orb_match`** — `cv2.findFundamentalMat` raises `cv2.error` on
    degenerate near-planar nadir points (OpenCV 4.13). Wrapped in `try/except cv2.error`.
 
-### Accuracy
+### Accuracy + Latency (budget 80 ms)
 
-| Tracker | RMSE | Final | Inliers | vs LK |
-|---------|------|-------|---------|-------|
-| lk | 21.4 m | 25.7 m | 576 | — |
-| fast_lk | 19.7 m | 24.5 m | 579 | −8% |
-| farneback | 21.0 m | 25.5 m | 578 | −2% |
-| **dis** | **18.7 m** | **20.5 m** | 577 | **−13%** |
-| orb | 23.4 m | 37.8 m | 366 | +9% |
-| sparse_raft | 284.7 m | 7.6 m | 0 | FAIL |
-
-### Latency (budget 80 ms)
-
-| Tracker | Detect | Track | Solve | Total | Margin |
-|---------|--------|-------|-------|-------|--------|
-| lk | 0.9 ms | 1.0 ms | 2.4 ms | 4.2 ms | 75.8 ms |
-| fast_lk | 0.9 ms | 0.9 ms | 2.4 ms | 4.2 ms | 75.8 ms |
-| farneback | 1.4 ms | 30.2 ms | 2.4 ms | 34.1 ms | 45.9 ms |
-| dis | 0.9 ms | 7.0 ms | 2.4 ms | 10.3 ms | 69.7 ms |
-| orb | 2.5 ms | 0.7 ms | 2.0 ms | 5.2 ms | 74.8 ms |
-| sparse_raft | 1.0 ms | 46.0 ms | 0.0 ms | 47.0 ms | 33.0 ms |
+| Tracker | RMSE | Final | Inliers | vs LK | Total | Margin |
+|---------|------|-------|---------|-------|-------|--------|
+| lk | 21.4 m | 25.7 m | 576 | — | 4.2 ms | 75.8 ms |
+| fast_lk | 19.7 m | 24.5 m | 579 | −8% | 4.2 ms | 75.8 ms |
+| farneback | 21.0 m | 25.5 m | 578 | −2% | 34.1 ms | 45.9 ms |
+| **dis** | **18.7 m** | **20.5 m** | 577 | **−13%** | 10.3 ms | 69.7 ms |
+| orb | 23.4 m | 37.8 m | 366 | +9% | 5.2 ms | 74.8 ms |
+| sparse_raft | 284.7 m | 7.6 m | 0 | FAIL | 47.0 ms | 33.0 ms |
 
 ### Key findings (short dataset)
 
