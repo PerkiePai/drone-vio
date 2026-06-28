@@ -34,7 +34,7 @@ and `images/cam0/` frames. Later recordings also have `cam1` (FPV), `agl.csv`, a
 | `isaac-sim-20260623` | 2026-06-23 | 2.6 min | 203 m | 25.6 m | 1 925 | — | First rigid-extrinsic recording; VIO fails (terrain depth ≫ baro alt) |
 | `isaac-sim-20260624` | 2026-06-24 | 3.8 min | 513 m | 27.9 m | 6 690 | 1 603 | Added cam1 + AGL bag; duplicate buggy calib files present |
 | `isaac-sim-20260624_2337` | 2026-06-24 23:37 | 7.5 min | 457 m | 43.5 m | 14 070 | 7 433 | **Main ablation dataset.** Full suite of results: flow-odom vs GT, DSMAC geo-loc, RaD-VIO baselines, fused flow+DSMAC, tracker RPE comparison. Includes 144 ortho tiles for DSMAC |
-| `isaac-sim-20260625` | 2026-06-25 | **76.9 min** | **9 522 m** | 48.9 m | 67 863 | 67 863 | **Long-mission dataset (~22 km).** Used for attitude comparison (GT vs Mahony vs Mahony+compass). Both cams matched frame-for-frame |
+| `isaac-sim-20260625` | 2026-06-25 | **76.9 min** | **22.5 km** (max radius 9.5 km) | 48.9 m | 67 863 | 67 863 | **Long-mission dataset (~22 km).** Used for attitude comparison (GT vs Mahony vs Mahony+compass). Both cams matched frame-for-frame |
 
 ### Key findings stored per-dataset
 
