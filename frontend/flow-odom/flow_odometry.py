@@ -220,8 +220,15 @@ def run(d, scale, max_frames, min_track, depth_source="baro", stride=1, fb_check
         if agl_arr is not None:               # reuse a precomputed AGL (fast sweeps)
             agl = agl_arr
         else:
-            print("  computing true AGL (GT-pose triangulation; stand-in for baro-DEM)...")
-            agl = compute_true_agl(recs, K, R_CtoI, scale)
+            cache_path = os.path.join(d, "agl_cache.npz")
+            if os.path.exists(cache_path):
+                agl = np.load(cache_path)["agl"]
+                print(f"  loaded cached AGL from {cache_path}")
+            else:
+                print("  computing true AGL (GT-pose triangulation; stand-in for baro-DEM)...")
+                agl = compute_true_agl(recs, K, R_CtoI, scale)
+                np.savez(cache_path, agl=agl)
+                print(f"  saved AGL cache → {cache_path}")
         print(f"  AGL: median {np.median(agl):.0f} m, range [{agl.min():.0f}, {agl.max():.0f}] m")
 
     lk = dict(winSize=(21, 21), maxLevel=3,
@@ -431,4 +438,8 @@ if __name__ == "__main__":
     est, gt, n_used, impl_depth, recs = run(args.dir, args.scale, args.max_frames,
                                             args.min_track, args.depth, args.stride,
                                             not args.no_fb, skip_frames=args.skip_frames)
+    traj_cache = os.path.join(args.dir, "tracker_trajs.npz")
+    tvec = np.array([(r["ts"] - recs[0]["ts"]) / 1e9 for r in recs])
+    np.savez(traj_cache, LK=est[:, :2], GT=gt[:, :2], t_vec=tvec)
+    print(f"saved trajectory cache → {traj_cache}")
     plot(est, gt, n_used, impl_depth, recs, out, args.depth)
