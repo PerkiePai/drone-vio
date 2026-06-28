@@ -120,7 +120,10 @@ def _orb_match(kp0, des0, kp1, des1, bf):
         return empty, empty
     p0g = np.float32([kp0[m.queryIdx].pt for m in matches])
     p1g = np.float32([kp1[m.trainIdx].pt for m in matches])
-    _, mask = cv2.findFundamentalMat(p0g, p1g, cv2.FM_RANSAC, 1.0, 0.999)
+    try:
+        _, mask = cv2.findFundamentalMat(p0g, p1g, cv2.FM_RANSAC, 1.0, 0.999)
+    except cv2.error:
+        return p0g, p1g
     if mask is None:
         return p0g, p1g
     mask = mask.reshape(-1).astype(bool)

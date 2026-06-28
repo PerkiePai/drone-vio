@@ -292,10 +292,10 @@ def main():
     dets  = [results[tk]["lat_det"] for tk in args.trackers]
     trks  = [results[tk]["lat_trk"] for tk in args.trackers]
     slvs  = [results[tk]["lat_slv"] for tk in args.trackers]
-    ax.bar(x, dets,               width, label="detect",          color="#4C72B0")
-    ax.bar(x, trks, bottom=dets,  width, label="track/match",     color="#DD8452")
+    ax.bar(x, dets,               width=width, label="detect",          color="#4C72B0")
+    ax.bar(x, trks, bottom=dets,  width=width, label="track/match",     color="#DD8452")
     ax.bar(x, slvs,
-           bottom=[d+t for d,t in zip(dets,trks)], width,
+           bottom=[d+t for d,t in zip(dets,trks)], width=width,
            label="solve",          color="#55A868")
     ax.axhline(FRAME_BUDGET_MS, color="red", ls="--", lw=1.5, label=f"budget ({FRAME_BUDGET_MS:.0f} ms)")
     ax.set_xticks(x); ax.set_xticklabels(args.trackers, fontsize=10)
