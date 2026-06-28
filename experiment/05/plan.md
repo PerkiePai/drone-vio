@@ -9,7 +9,9 @@
 
 Exp01–04 established:
 - DSMAC with ALIKED+LightGlue: 55% match rate, 13.8 m median abs-error (short dataset, 60-frame sample, Exp03)
-- Best deployable trajectory: G-L = 35.7 m RMSE, 57.0 m final over 22 km (AHRS+compass, rej=150, skip=13, Exp02)
+- **LK confirmed as the tracker for long-flight + DSMAC fusion (Exp04):** LK fused RMSE 39.0 m / 24.1 m
+  final over 22 km (71/72 fixes, 99%). All non-LK trackers (DIS, FAST+LK, Farneback, ORB) saw fused
+  RMSE *increase* vs flow-odom-only due to uneven drift causing bad fix acceptance.
 - Long dataset (`isaac-sim-20260625`) has no per-fix accuracy benchmark — only trajectory-level results exist
 
 DSMAC has only ever used ALIKED+LightGlue. The `lightglue` pip package ships four extractor variants
@@ -83,12 +85,12 @@ Settings: `--attitude ahrs_compass --reject 150 --skip_below 13 --blend 0.8 --fi
 
 **Metrics:**
 
-| Metric | G-L baseline (Exp02) | Target |
+| Metric | LK baseline (Exp04) | Target |
 |--------|---------------------|--------|
-| Flow-odom RMSE | 80.2 m | — (unchanged) |
-| Fused RMSE | 35.7 m | ≤ 35.7 m |
-| Fused final | 57.0 m | ≤ 57.0 m |
-| DSMAC rate | 68/68 (100%) | ≥ 68/68 |
+| Flow-odom RMSE | 77.2 m | — (unchanged) |
+| Fused RMSE | 39.0 m | ≤ 39.0 m |
+| Fused final | 24.1 m | ≤ 24.1 m |
+| DSMAC rate | 71/72 (99%) | ≥ 71/72 |
 
 If ALIKED remains best from Exp1, skip Exp2 and record as confirmed long-dataset baseline.
 
@@ -152,3 +154,5 @@ remain the best overall given its track record on degraded/nadir footage.
 
 - **Compass noise sensitivity:** `mag_noise_deg > 0` — quantify degradation from real magnetometer noise
 - **Short-flight tilt gap:** AHRS roll/pitch scale error (1.31) — structural fix requires rangefinder or multi-cam
+- **DIS long-flight regression:** DIS best on short (18.7 m) but worst among dense methods on long (107.6 m) — investigate scale bias vs step-variance as root cause
+- **RAFT on nadir:** complete failure (0 inliers) due to OOD domain — requires aerial fine-tuning (e.g. GMFlow-large)
