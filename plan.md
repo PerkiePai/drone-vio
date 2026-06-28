@@ -1,134 +1,122 @@
-# Implementation Plan — Blend Autotune
+# Implementation Plan — Autotune reject + skip_below
 
-## Goal
-
-Replace the fixed `--blend` parameter in `pipeline.py` with a self-calibrating blend
-that estimates DSMAC noise from an initial warm-up phase and then adjusts blend
-per-fix based on how much flow-odom has drifted since the last fix.  No GT required.
+Blend autotune is already implemented (`--autotune`, lines 334–346 of `pipeline.py`).
+The warmup infrastructure (`warmup_jumps`, `dsmac_std`) is already in place.
+This plan extends autotune to cover `--reject` and `--skip_below` using the same
+warmup data — no GT required.
 
 ---
 
-## Background
+## reject
 
-The current pipeline uses a single fixed `blend=0.8` for every DSMAC correction:
+**Current:** fixed gate `d <= args.reject` (150 m), measured from the drifted prior.
+**Problem:** too loose when drift is low (lets bad fixes through — Exp05 anomaly 3);
+too tight when drift is high (rejects valid fixes).
+
+**Fix: per-fix dynamic gate**
 
 ```python
-pos = pos + blend * (fix - pos)
+reject = drift_since + 3 * dsmac_std
 ```
 
-The optimal blend actually varies with how far flow-odom has drifted (more drift →
-trust the fix more) and with DSMAC noise (noisier fix → trust it less).  The
-Kalman-style formula is:
+- `drift_since` — already tracked; accounts for how wrong the prior could be
+- `3 * dsmac_std` — 3-sigma DSMAC noise, estimated from warmup residuals
 
+Right after a correction (`drift_since ≈ 0`) the gate is ~3 × dsmac_std (~40 m for
+SIFT).  After 500 m of dead-reckoning it widens to ~500 + 40 = 540 m.  A bad fix
+that is 120 m from GT but only 80 m from a drifted prior gets rejected when the gate
+is 80 + 40 = 120 m — it lands exactly on the boundary, whereas the current fixed
+150 m accepts it unconditionally.
+
+**During warmup** (`dsmac_std is None`): fall back to `args.reject` so the warmup
+fixes themselves are not rejected by an uninitialized gate.
+
+---
+
+## skip_below
+
+**Current:** fixed threshold `drift_since >= args.skip_below` (13 m).
+**Problem:** hardcoded to 13 m, which happens to match SIFT on Isaac Sim but is
+too low for noisy extractors (ALIKED `dsmac_std` much higher — attempting fixes
+too early injects noise before flow-odom has drifted enough to make the fix
+worthwhile).
+
+**Fix: set threshold to dsmac_std**
+
+```python
+skip_below = dsmac_std   # attempt only when expected flow error ≥ DSMAC noise
 ```
-blend = drift_var / (drift_var + dsmac_var)
-```
 
-where:
-- `drift_var` grows with distance walked since the last fix (rough: ~5% drift rate
-  → `drift_std ≈ drift_since * 0.05`)
-- `dsmac_var` is estimated from fix-to-prior residuals during warm-up, then frozen
+Only fire DSMAC once flow-odom has drifted enough that the fix can actually improve
+position.  Below this threshold, DSMAC noise exceeds the benefit.
 
-An inlier-confidence scale (`min(1.0, inl/50)`) further down-weights low-inlier
-fixes.  The blend is clipped to `[0.3, 1.0]` to prevent over-trust or near-zero
-corrections.
+**During warmup** (`dsmac_std is None`): use `args.skip_below` (default 13 m) so
+the warmup fixes fire normally.
 
 ---
 
 ## Changes to `pipeline.py`
 
-### 1. New CLI flags
+All changes are inside the DSMAC block (~line 326).  The warmup state variables
+(`warmup_jumps`, `dsmac_std`) already exist.
 
-```
---autotune        enable blend autotune (default: off, keeps --blend behavior)
---warmup_fixes N  number of warmup fixes to collect dsmac_std (default: 6)
-```
-
-### 2. Warmup state variables (add after line 289 near `drift_since = 0.0`)
+### 1. Dynamic reject gate (replace fixed `acc` check)
 
 ```python
-warmup_jumps = []   # |fix - pos| residuals collected at blend=1.0
-dsmac_std    = None # frozen after warmup; None means still warming up
+# line 332 — replace:
+acc = d <= args.reject
+
+# with:
+if args.autotune and dsmac_std is not None:
+    reject = drift_since + 3 * dsmac_std
+else:
+    reject = args.reject
+acc = d <= reject
 ```
 
-### 3. DSMAC block replacement (inside the `if fix is not None:` block, ~line 330)
-
-Replace:
+### 2. Dynamic skip_below (replace fixed skip condition)
 
 ```python
-if acc:
-    pos = np.array([pos[0] + args.blend * (eE - pos[0]),
-                    pos[1] + args.blend * (eN - pos[1])])
-    drift_since = 0.0
+# line 327 — replace:
+if step % args.fix_every == 0 and drift_since >= args.skip_below:
+
+# with:
+skip = dsmac_std if (args.autotune and dsmac_std is not None) else args.skip_below
+if step % args.fix_every == 0 and drift_since >= skip:
 ```
 
-With:
+### 3. Stats panel (`report_and_plot`)
+
+Update the `reject` and `skip_below` rows to show `autotune` when active:
 
 ```python
-if acc:
-    if args.autotune:
-        if len(warmup_jumps) < args.warmup_fixes:
-            # warm-up: snap fully to fix, record residual
-            warmup_jumps.append(d)
-            blend = 1.0
-        else:
-            if dsmac_std is None:
-                dsmac_std = np.std(warmup_jumps) if len(warmup_jumps) > 1 else d
-            inlier_conf = min(1.0, inl / 50)
-            flow_std    = drift_since * 0.05       # rough ~5% LK drift rate
-            blend       = (flow_std ** 2) / (flow_std ** 2 + dsmac_std ** 2)
-            blend       = float(np.clip(blend * inlier_conf, 0.3, 1.0))
-    else:
-        blend = args.blend
-
-    pos = np.array([pos[0] + blend * (eE - pos[0]),
-                    pos[1] + blend * (eN - pos[1])])
-    drift_since = 0.0
+f"{'reject':<22} {'autotune (drift+3σ)' if args.autotune else str(args.reject) + ' m'}\n"
+f"{'skip_below':<22} {'autotune (=dsmac_std)' if args.autotune else str(args.skip_below) + ' m'}\n"
 ```
-
-### 4. Stats panel update (in `report_and_plot`)
-
-Add `blend` row: when autotune is on, display `autotune (warmup={N})` instead of
-the fixed value.
 
 ---
 
-## Practical tuning guidance (for reference)
+## Ordering dependency
 
-| Situation | Suggested blend |
-|---|---|
-| Similar altitude, similar terrain | 0.8 (keep default) |
-| Poor texture, DSMAC often wrong | 0.6–0.7 |
-| High-quality ortho, low AGL noise | 0.9–1.0 |
-| Very noisy flow-odom (high alt) | 0.9+ |
-
-When autotune is not used, sweep blends with:
-
-```bash
-for b in 0.5 0.6 0.7 0.8 0.9 1.0; do
-    conda run -n drone python pipeline.py --dir _in/your-dataset --blend $b
-done
-```
-
-Pick the blend that minimises RMSE.  Since `--reject 150` already gates out gross
-outliers, blend only matters for the fine-grained correction quality.
+`dsmac_std` is frozen after the first `warmup_fixes` accepted fixes.  Until then,
+all three autotuned values (`blend`, `reject`, `skip_below`) fall back to their
+fixed CLI defaults.  The warmup phase must complete before autotune takes effect —
+this happens automatically once `len(warmup_jumps) == args.warmup_fixes`.
 
 ---
 
 ## Validation run
 
-After implementation, compare on the long dataset:
-
 ```bash
-# baseline (fixed blend)
-conda run -n drone python pipeline.py --dir _in/isaac-sim-20260625 --blend 0.8
+# baseline
+conda run -n drone python pipeline.py --dir _in/isaac-sim-20260625
 
-# autotune
+# full autotune (blend + reject + skip_below)
 conda run -n drone python pipeline.py --dir _in/isaac-sim-20260625 --autotune
 ```
 
-Expected: autotune RMSE ≤ fixed-blend RMSE, with tighter variance across altitude
-segments.  Warm-up phase (first 6 fixes) will show blend=1.0 then it adapts.
+Expected: fewer bad fixes accepted (dynamic reject tighter early in each leg),
+ALIKED fused RMSE drops below flow-odom-only (77.2 m), SIFT RMSE stays ≤ 20 m.
 
 ---
 
@@ -136,7 +124,6 @@ segments.  Warm-up phase (first 6 fixes) will show blend=1.0 then it adapts.
 
 | File | Change |
 |---|---|
-| `pipeline.py` | `--autotune`, `--warmup_fixes` flags; warmup state; per-fix blend logic |
+| `pipeline.py` | dynamic `reject` and `skip_below` inside DSMAC block; stats panel labels |
 
-No new files.  Autotune is opt-in; `--blend` continues to work unchanged when
-`--autotune` is not passed.
+No new flags needed — both extend the existing `--autotune` switch.
