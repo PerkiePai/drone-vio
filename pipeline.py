@@ -289,6 +289,8 @@ def run_pipeline(args):
     fixes       = []   # (step, eE, eN, accepted, dist_m, inliers)
     drift_since = 0.0
     step        = 0
+    warmup_jumps = []   # |fix - pos| residuals collected at blend=1.0
+    dsmac_std    = None # frozen after warmup; None means still warming up
     prev        = _load(recs[0]["img"])
 
     total_steps = (N - 1) // args.stride
@@ -329,8 +331,21 @@ def run_pipeline(args):
                 d   = math.hypot(eE - pos[0], eN - pos[1])
                 acc = d <= args.reject
                 if acc:
-                    pos = np.array([pos[0] + args.blend * (eE - pos[0]),
-                                    pos[1] + args.blend * (eN - pos[1])])
+                    if args.autotune:
+                        if len(warmup_jumps) < args.warmup_fixes:
+                            warmup_jumps.append(d)
+                            blend = 1.0
+                        else:
+                            if dsmac_std is None:
+                                dsmac_std = np.std(warmup_jumps) if len(warmup_jumps) > 1 else d
+                            inlier_conf = min(1.0, inl / 50)
+                            flow_std    = drift_since * 0.05
+                            blend       = (flow_std ** 2) / (flow_std ** 2 + dsmac_std ** 2)
+                            blend       = float(np.clip(blend * inlier_conf, 0.3, 1.0))
+                    else:
+                        blend = args.blend
+                    pos = np.array([pos[0] + blend * (eE - pos[0]),
+                                    pos[1] + blend * (eN - pos[1])])
                     drift_since = 0.0
                 fixes.append((step, eE, eN, acc, d, inl))
 
@@ -414,7 +429,7 @@ def report_and_plot(fused, GT, tvec, fixes, n_used, args):
         f"{'fix_every':<22} {args.fix_every} steps\n"
         f"{'skip_below':<22} {args.skip_below} m\n"
         f"{'reject':<22} {args.reject} m\n"
-        f"{'blend':<22} {args.blend}\n"
+        f"{'blend':<22} {'autotune (warmup=' + str(args.warmup_fixes) + ')' if args.autotune else args.blend}\n"
         f"{'─'*44}\n"
         f"{'Path length':<22} {path_len:.0f} m\n"
         f"{'Duration':<22} {tvec[-1]/60:.1f} min\n"
@@ -471,6 +486,10 @@ def main():
                     help="skip DSMAC until estimated drift exceeds this (m)")
     ap.add_argument("--min_inliers", type=int,   default=15,
                     help="min RANSAC inliers to accept a DSMAC fix")
+    ap.add_argument("--autotune",     action="store_true",
+                    help="enable Kalman-style blend autotune (default: off)")
+    ap.add_argument("--warmup_fixes", type=int,   default=6,
+                    help="warmup fixes before autotune activates (default: 6)")
     ap.add_argument("--out",         default=None,
                     help="output plot path (default: _out/pipeline_<dataset>.png)")
     args = ap.parse_args()
