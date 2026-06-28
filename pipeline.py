@@ -324,12 +324,17 @@ def run_pipeline(args):
         step        += 1
 
         # DSMAC: fire every fix_every steps, once drift exceeds skip_below
-        if step % args.fix_every == 0 and drift_since >= args.skip_below:
+        skip = dsmac_std if (args.autotune and dsmac_std is not None) else args.skip_below
+        if step % args.fix_every == 0 and drift_since >= skip:
             fix = _dsmac_fix(i, pos)
             if fix is not None:
                 eE, eN, inl = fix
                 d   = math.hypot(eE - pos[0], eN - pos[1])
-                acc = d <= args.reject
+                if args.autotune and dsmac_std is not None:
+                    reject = drift_since + 3 * dsmac_std
+                else:
+                    reject = args.reject
+                acc = d <= reject
                 if acc:
                     if args.autotune:
                         if len(warmup_jumps) < args.warmup_fixes:
@@ -427,8 +432,8 @@ def report_and_plot(fused, GT, tvec, fixes, n_used, args):
         f"{'Attitude':<22} AHRS + compass (Mahony)\n"
         f"{'DSMAC extractor':<22} SIFT+LightGlue\n"
         f"{'fix_every':<22} {args.fix_every} steps\n"
-        f"{'skip_below':<22} {args.skip_below} m\n"
-        f"{'reject':<22} {args.reject} m\n"
+        f"{'skip_below':<22} {'autotune (=dsmac_std)' if args.autotune else str(args.skip_below) + ' m'}\n"
+        f"{'reject':<22} {'autotune (drift+3σ)' if args.autotune else str(args.reject) + ' m'}\n"
         f"{'blend':<22} {'autotune (warmup=' + str(args.warmup_fixes) + ')' if args.autotune else args.blend}\n"
         f"{'─'*44}\n"
         f"{'Path length':<22} {path_len:.0f} m\n"
