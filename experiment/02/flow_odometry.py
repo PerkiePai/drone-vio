@@ -435,8 +435,8 @@ if __name__ == "__main__":
     if args.out:
         out = args.out
     else:
-        ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        out = os.path.join(ROOT, "experiment", os.path.basename(args.dir),
+        EXP_DIR = os.path.dirname(os.path.abspath(__file__))  # experiment/02
+        out = os.path.join(EXP_DIR, os.path.basename(args.dir),
                            f"flow_{args.depth}_{args.attitude}_s{args.stride}.png")
     os.makedirs(os.path.dirname(out), exist_ok=True)
     att_R = None

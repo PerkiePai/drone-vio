@@ -26,9 +26,7 @@ import matplotlib.pyplot as plt
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(os.path.dirname(HERE))
-sys.path.insert(0, os.path.join(ROOT, "frontend", "flow-odom"))
-sys.path.insert(0, os.path.join(ROOT, "frontend", "openvins-alike-lightglue"))
-sys.path.insert(0, HERE)
+sys.path.insert(0, HERE)  # all deps (flow_odometry, dsmac_match, compare_tracking) are co-located
 import flow_odometry as fo
 from compare_tracking import LG
 from dsmac_match import build_ortho, warp_north_up
@@ -57,8 +55,10 @@ def main():
     D = args.dir
     att_tag = f"_{args.attitude}" if args.attitude != "gt" else ""
     dep_tag = f"_{args.depth}" if args.depth != "agl" else ""
-    out = args.out or os.path.join(ROOT, "experiment", os.path.basename(D),
-                                   f"fused{att_tag}{dep_tag}_rej{int(args.reject)}.png")
+    skip_tag = f"_skip{int(args.skip_below)}" if args.skip_below > 0 else ""
+    blend_tag = "_conf" if args.conf_blend else ""
+    out = args.out or os.path.join(HERE, os.path.basename(D),
+                                   f"fused{att_tag}{dep_tag}_rej{int(args.reject)}{skip_tag}{blend_tag}.png")
     os.makedirs(os.path.dirname(out), exist_ok=True)
 
     geo = list(csv.DictReader(open(os.path.join(D, "geo.csv"))))
