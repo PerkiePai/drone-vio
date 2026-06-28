@@ -50,11 +50,7 @@ def main():
     ap.add_argument("--out", default=None)
     args = ap.parse_args()
     D = args.dir
-    if args.out:
-        out = args.out
-    else:
-        ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        out = os.path.join(ROOT, "experiment", os.path.basename(D), "fused_flowodom_dsmac.png")
+    out = args.out or os.path.join(ROOT, "experiment", os.path.basename(D), "fused_flowodom_dsmac.png")
     os.makedirs(os.path.dirname(out), exist_ok=True)
 
     geo = list(csv.DictReader(open(os.path.join(D, "geo.csv"))))
