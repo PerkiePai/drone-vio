@@ -449,6 +449,7 @@ if __name__ == "__main__":
                                             attitude_R=att_R)
     traj_cache = os.path.join(args.dir, "tracker_trajs.npz")
     tvec = np.array([(r["ts"] - recs[0]["ts"]) / 1e9 for r in recs])
-    np.savez(traj_cache, LK=est[:, :2], GT=gt[:, :2], t_vec=tvec)
-    print(f"saved trajectory cache → {traj_cache}")
+    if args.attitude == "gt" and not os.path.exists(traj_cache):
+        np.savez(traj_cache, LK=est[:, :2], GT=gt[:, :2], t_vec=tvec)
+        print(f"saved trajectory cache → {traj_cache}")
     plot(est, gt, n_used, impl_depth, recs, out, args.depth)
