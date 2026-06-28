@@ -328,22 +328,29 @@ def _print_benchmark(bm_load, bm_detect, bm_track, bm_solve, bm_total, tracker):
 # ─── main odometry loop ──────────────────────────────────────────────────────
 
 def run(d, scale, max_frames, min_track, depth_source="baro", stride=1,
-        agl_arr=None, attitude_R=None, skip_frames=0, tracker="lk", benchmark=False):
+        agl_arr=None, attitude_R=None, skip_frames=0, tracker="lk", benchmark=False,
+        skip_below=0.0):
     K, R_CtoI, recs = load_dataset(d)
+    offset = 0
     if skip_frames:
         recs = recs[skip_frames:]
+        offset += skip_frames
+    if skip_below > 0.0:
+        skip_n = next((i for i, r in enumerate(recs) if r["h"] >= skip_below), 0)
+        recs = recs[skip_n:]
+        offset += skip_n
     if max_frames:
         recs = recs[:max_frames]
     if attitude_R is not None:
         for i in range(len(recs)):
-            recs[i]["R_wb"] = attitude_R[i]
+            recs[i]["R_wb"] = attitude_R[offset + i]
     Ks   = K.copy(); Ks[:2, :] *= scale
     Kinv = np.linalg.inv(Ks)
 
     agl = None
     if depth_source == "agl":
         if agl_arr is not None:
-            agl = agl_arr
+            agl = agl_arr[offset:]
         else:
             cache_path = os.path.join(d, "agl_cache.npz")
             if os.path.exists(cache_path):
