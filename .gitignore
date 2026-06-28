@@ -1,8 +1,9 @@
 # Third-party cloned repo (has its own git history + downloaded weights)
 SuperGluePretrainedNetwork/
 
-# Input media and extracted frames
+# Input media and extracted frames (index tracked, data gitignored)
 _in/
+!_in.md
 _out*/
 _result/
 
