@@ -201,8 +201,10 @@ def compute_true_agl(recs, K, R_CtoI, scale, W=10, step=4, min_pts=20):
 
 
 def run(d, scale, max_frames, min_track, depth_source="baro", stride=1, fb_check=True,
-        agl_arr=None, attitude_R=None):
+        agl_arr=None, attitude_R=None, skip_frames=0):
     K, R_CtoI, recs = load_dataset(d)
+    if skip_frames:
+        recs = recs[skip_frames:]
     if max_frames:
         recs = recs[:max_frames]
     if attitude_R is not None:              # use IMU-AHRS attitude instead of GT
@@ -349,20 +351,46 @@ def plot(est, gt, n_used, impl_depth, recs, out, depth_source="baro"):
     a.set_xlabel("time (s)"); a.set_ylabel("error (m)"); a.grid(alpha=0.3)
 
     a = ax[1, 0]
-    a.plot(t, gt[:, 2], "b-", label="GT z")
-    a.plot(t, est[:, 2], "r--", label="baro z")
-    a.set_title("Altitude"); a.set_xlabel("time (s)"); a.set_ylabel("up (m)")
-    a.legend(); a.grid(alpha=0.3)
+    a.axis("off")
+    duration_s = t[-1] - t[0]
+    max_err = err.max()
+    max_err_t = t[np.argmax(err)]
+    baro_h = np.array([r["h"] for r in recs])
+    m_d = np.isfinite(impl_depth)
+    ratio = np.nanmedian(impl_depth[m_d] / baro_h[m_d]) if m_d.any() else float("nan")
+    stats = (
+        f"{'FLIGHT STATISTICS':^38}\n"
+        f"{'─'*38}\n"
+        f"{'Depth source':<22} {depth_source}\n"
+        f"{'Duration':<22} {duration_s:.0f} s  ({duration_s/60:.1f} min)\n"
+        f"{'Frames processed':<22} {len(recs)}\n"
+        f"{'─'*38}\n"
+        f"{'PATH LENGTH':<22}\n"
+        f"  GT                   {path_len:.1f} m\n"
+        f"  Estimated            {est_len:.1f} m\n"
+        f"  Scale (est/GT)       {est_len/path_len:.3f}\n"
+        f"{'─'*38}\n"
+        f"{'HORIZONTAL ERROR':<22}\n"
+        f"  Final                {err[-1]:.1f} m  ({100*err[-1]/path_len:.2f}%)\n"
+        f"  Mean                 {err.mean():.1f} m  ({100*err.mean()/path_len:.2f}%)\n"
+        f"  Max                  {max_err:.1f} m  ({100*max_err/path_len:.2f}%)  @{max_err_t:.0f}s\n"
+        f"  RMSE                 {np.sqrt((err**2).mean()):.1f} m\n"
+        f"{'─'*38}\n"
+        f"{'AGL (depth source)':<22}\n"
+        f"  Median               {np.nanmedian(impl_depth[m_d]):.0f} m\n"
+        f"  Range                {np.nanmin(impl_depth[m_d]):.0f}–{np.nanmax(impl_depth[m_d]):.0f} m\n"
+        + (f"  Baro depth ratio     {ratio:.1f}x\n" if np.isfinite(ratio) else "")
+    )
+    a.text(0.05, 0.97, stats, transform=a.transAxes, va="top", ha="left",
+           fontsize=9.5, fontfamily="monospace",
+           bbox=dict(boxstyle="round,pad=0.5", facecolor="#f7f7f7", edgecolor="#aaaaaa"))
 
     # The key diagnosis: TRUE camera-to-ground depth (from flow + GT) vs the baro
     # height-above-takeoff that the scaling assumes.  On Cesium real terrain the
     # ground falls away into a valley, so depth >> baro height -> scale too small.
     a = ax[1, 1]
-    baro_h = np.array([r["h"] for r in recs])
-    m = np.isfinite(impl_depth)
-    a.plot(t[m], impl_depth[m], "m.", ms=3, label="true depth (flow+GT)")
+    a.plot(t[m_d], impl_depth[m_d], "m.", ms=3, label="true depth (flow+GT)")
     a.plot(t, baro_h, "g-", lw=1.5, label="baro height a.g.t.")
-    ratio = np.nanmedian(impl_depth[m] / baro_h[m])
     a.set_title(f"Why scale is off: ground is ~{ratio:.0f}x deeper than baro height\n"
                 "(terrain falls away — baro a.g.t. != camera-ground depth)")
     a.set_xlabel("time (s)"); a.set_ylabel("metres"); a.legend(); a.grid(alpha=0.3)
@@ -391,10 +419,11 @@ if __name__ == "__main__":
     ap.add_argument("--stride", type=int, default=1,
                     help="process every Nth frame (bigger baseline -> better flow SNR at high fps)")
     ap.add_argument("--no_fb", action="store_true", help="disable forward-backward LK consistency check")
+    ap.add_argument("--skip_frames", type=int, default=0, help="skip first N frames (to run a later segment)")
     ap.add_argument("--out", default=None)
     args = ap.parse_args()
     out = args.out or os.path.join(args.dir, f"flow_vs_gt_{args.depth}.png")
     est, gt, n_used, impl_depth, recs = run(args.dir, args.scale, args.max_frames,
                                             args.min_track, args.depth, args.stride,
-                                            not args.no_fb)
+                                            not args.no_fb, skip_frames=args.skip_frames)
     plot(est, gt, n_used, impl_depth, recs, out, args.depth)
