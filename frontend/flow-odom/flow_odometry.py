@@ -422,7 +422,12 @@ if __name__ == "__main__":
     ap.add_argument("--skip_frames", type=int, default=0, help="skip first N frames (to run a later segment)")
     ap.add_argument("--out", default=None)
     args = ap.parse_args()
-    out = args.out or os.path.join(args.dir, f"flow_vs_gt_{args.depth}.png")
+    if args.out:
+        out = args.out
+    else:
+        ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        out = os.path.join(ROOT, "experiment", os.path.basename(args.dir), f"flow_vs_gt_{args.depth}.png")
+    os.makedirs(os.path.dirname(out), exist_ok=True)
     est, gt, n_used, impl_depth, recs = run(args.dir, args.scale, args.max_frames,
                                             args.min_track, args.depth, args.stride,
                                             not args.no_fb, skip_frames=args.skip_frames)
