@@ -144,6 +144,59 @@ Goal: make fused beat flow-odom-only (8.8 m) on the short dataset where fixes in
 
 ---
 
+## Experiment 4 (2026-06-28): reject=45 vs reject=150 with skip_below=13 — Long Dataset
+
+Re-ran the fused pipeline on the long dataset (`isaac-sim-20260625`, 22 407 m)
+with `--attitude ahrs_compass --depth agl --skip_below 13`, sweeping reject.
+
+```
+conda run -n drone python experiment/02/fuse_flowodom_dsmac.py \
+    --dir _in/isaac-sim-20260625 --attitude ahrs_compass --depth agl \
+    --reject 45  --skip_below 13
+conda run -n drone python experiment/02/fuse_flowodom_dsmac.py \
+    --dir _in/isaac-sim-20260625 --attitude ahrs_compass --depth agl \
+    --reject 150 --skip_below 13
+```
+
+| Run | reject | skip_below | Flow-odom RMSE | Fused RMSE | Fused final | DSMAC attempts | Accepted |
+|-----|--------|------------|----------------|------------|-------------|----------------|----------|
+| G-L4a | 45  | 13 | 80.2 m | 79.9 m | 11.0 m | 65 | **1 (1.5%)** |
+| G-L4b | 150 | 13 | 80.2 m | 35.7 m | 57.0 m | 68 | **68 (100%)** |
+
+### Key findings
+
+1. **reject=45 is too tight for AHRS+compass on the long flight.**
+   Only 1 of 65 DSMAC attempts passes the 45 m gate. The AHRS+compass
+   flow-odom accumulates > 45 m of drift between fix attempts on a 22 km
+   flight, so the DSMAC fix position is already > 45 m away from the
+   drifted prior when each fix fires. Result is essentially pure flow-odom
+   (RMSE 79.9 m vs 80.2 m).
+
+2. **reject=150 + skip_below=13 confirms G-L (35.7 m, 68/68).**
+   skip_below=13 is inactive on the long flight — by the time the first
+   fix fires, accumulated drift is already >> 13 m. Result is identical
+   to the original G-L run without skip_below.
+
+3. **For the long AHRS+compass flight, reject must be ≥ ~80 m** to accept
+   a useful fraction of fixes. reject=150 accepts 100% (68/68) and halves
+   RMSE vs flow-odom only (35.7 m vs 80.2 m). A tighter gate doesn't
+   prevent bad fixes here — it prevents *all* fixes because the prior
+   has already drifted past the gate before DSMAC fires.
+
+### Updated long-dataset summary
+
+| Setup | RMSE | Final | % path | DSMAC rate |
+|-------|------|-------|--------|------------|
+| flow-odom, AHRS+compass, agl (C2-L) | 80.2 m | 30.0 m | 0.1% | — |
+| fused, AHRS+compass, rej=45, skip=13 (G-L4a) | 79.9 m | 11.0 m | bounded | 1/65 |
+| **fused, AHRS+compass, rej=150, skip=13 (G-L4b)** | **35.7 m** | **57.0 m** | **bounded** | **68/68** |
+
+**Output files:**
+- `experiment/02/isaac-sim-20260625/fused_ahrs_compass_rej45_skip13.png`
+- `experiment/02/isaac-sim-20260625/fused_ahrs_compass_rej150_skip13.png`
+
+---
+
 ## Open Items
 
 - **Exp3 (real-time stream / latency profiling):** deferred to Exp03
