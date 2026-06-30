@@ -94,6 +94,10 @@ def build_ortho(geo, z, margin, tiles_dir):
     xa, xb = int(math.floor(min(x0, x1))), int(math.floor(max(x0, x1)))
     ya, yb = int(math.floor(min(y0, y1))), int(math.floor(max(y0, y1)))
     W, H   = (xb - xa + 1) * 256, (yb - ya + 1) * 256
+    mem_mb = W * H * 3 / 1e6
+    print(f"  estimated ortho RAM: {mem_mb:.0f} MB  ({W}×{H} px)")
+    if mem_mb > 500:
+        print(f"  WARNING: ortho > 500 MB — consider reducing zoom (current z={z})")
     ortho  = np.zeros((H, W, 3), np.uint8)
     placed = 0
     for ty in range(ya, yb + 1):
@@ -105,8 +109,8 @@ def build_ortho(geo, z, margin, tiles_dir):
                     try:
                         req = urllib.request.Request(
                             url, headers={"User-Agent": "research-prototype"})
-                        open(fp, "wb").write(
-                            urllib.request.urlopen(req, timeout=20).read())
+                        with open(fp, "wb") as fh:
+                            fh.write(urllib.request.urlopen(req, timeout=20).read())
                         break
                     except Exception:
                         if attempt == 2:
@@ -211,16 +215,18 @@ def run_pipeline(args):
 
     # attitude: Mahony AHRS + magnetometer compass (no GT)
     print("  computing AHRS+compass attitude ...")
-    att_R = fo.compute_ahrs_attitude(D, recs, Kp=1.0, mag_gain=1.0)
+    att_R = fo.compute_ahrs_attitude(D, recs, Kp=1.0, mag_gain=args.compass_gain)
     for i in range(N):
         recs[i]["R_wb"] = att_R[i]
 
     # satellite ortho
-    geo        = list(csv.DictReader(open(os.path.join(D, "geo.csv"))))
+    with open(os.path.join(D, "geo.csv")) as fh:
+        geo = list(csv.DictReader(fh))
     ortho, meta = build_ortho(geo, 19, 0.0016, os.path.join(D, "ortho_tiles"))
     orthog     = cv2.cvtColor(ortho, cv2.COLOR_BGR2GRAY)
     nN         = 2 ** meta["z"]
-    g          = json.load(open(os.path.join(D, "georef.json")))
+    with open(os.path.join(D, "georef.json")) as fh:
+        g = json.load(fh)
     lat0, lon0 = g["origin"]["latitude"], g["origin"]["longitude"]
     mlat = 111320.0
     mlon = 111320.0 * math.cos(math.radians(lat0))
@@ -259,11 +265,14 @@ def run_pipeline(args):
         yaw = math.degrees(math.atan2(r["R_wb"][1, 0], r["R_wb"][0, 0]))
         f   = (agl[rec_i] / fx) / GSD
         cx, cy = enu_to_px(prior_xy[0], prior_xy[1])
-        x0 = max(0, int(cx - args.win))
-        y0 = max(0, int(cy - args.win))
+        x0 = int(np.clip(cx - args.win, 0, meta["W"] - 2 * args.win))
+        y0 = int(np.clip(cy - args.win, 0, meta["H"] - 2 * args.win))
         win = orthog[y0:y0 + 2 * args.win, x0:x0 + 2 * args.win]
         if win.shape[0] < 50 or win.shape[1] < 50:
             return None
+        # Hm maps q-keypoints → win-keypoints.  cpt is the drone image centre in
+        # q-space (output of warp_north_up).  Hm @ cpt → fix in win-space → add
+        # (x0, y0) for ortho-pixel coords → px_to_enu.
         q, cpt = warp_north_up(im, yaw, f)
         try:
             k0, k1 = lg.match(lg.extract(q), lg.extract(win))
@@ -282,6 +291,10 @@ def run_pipeline(args):
     # Initial position: GT nadir point at takeoff.
     # In deployment, replace with first GPS fix or known takeoff coordinates.
     pos         = recs[0]["gt"][:2].copy()
+    if args.init_offset_m > 0:
+        _rng = np.random.default_rng(42)
+        pos  = pos + _rng.normal(0, args.init_offset_m, size=2)
+        print(f"  init offset applied: {np.linalg.norm(pos - recs[0]['gt'][:2]):.1f} m")
     fused       = [pos.copy()]
     gt_list     = [recs[0]["gt"][:2]]
     ts_list     = [recs[0]["ts"]]
@@ -338,15 +351,19 @@ def run_pipeline(args):
                 if acc:
                     if args.autotune:
                         if len(warmup_jumps) < args.warmup_fixes:
+                            gt_err = float(np.linalg.norm(pos - recs[i]["gt"][:2]))
+                            print(f"  warmup {len(warmup_jumps)+1}/{args.warmup_fixes}: "
+                                  f"d(fix-prior)={d:.1f} m  d(flow-GT)={gt_err:.1f} m  "
+                                  f"ratio={d/max(gt_err, 1e-3):.2f}")
                             warmup_jumps.append(d)
                             blend = 1.0
                         else:
                             if dsmac_std is None:
                                 dsmac_std = np.std(warmup_jumps) if len(warmup_jumps) > 1 else d
                             inlier_conf = min(1.0, inl / 50)
-                            flow_std    = drift_since * 0.05
+                            flow_std    = drift_since * args.flow_std_coeff
                             blend       = (flow_std ** 2) / (flow_std ** 2 + dsmac_std ** 2)
-                            blend       = float(np.clip(blend * inlier_conf, 0.3, 1.0))
+                            blend       = float(np.clip(blend * inlier_conf, args.blend_floor, 1.0))
                     else:
                         blend = args.blend
                     pos = np.array([pos[0] + blend * (eE - pos[0]),
@@ -491,10 +508,18 @@ def main():
                     help="skip DSMAC until estimated drift exceeds this (m)")
     ap.add_argument("--min_inliers", type=int,   default=15,
                     help="min RANSAC inliers to accept a DSMAC fix")
-    ap.add_argument("--autotune",     action="store_true",
+    ap.add_argument("--autotune",      action="store_true",
                     help="enable Kalman-style blend autotune (default: off)")
-    ap.add_argument("--warmup_fixes", type=int,   default=6,
+    ap.add_argument("--warmup_fixes",  type=int,   default=6,
                     help="warmup fixes before autotune activates (default: 6)")
+    ap.add_argument("--flow_std_coeff", type=float, default=0.05,
+                    help="drift-to-uncertainty ratio for autotune blend (default 0.05)")
+    ap.add_argument("--blend_floor",   type=float, default=0.3,
+                    help="min blend in autotune mode (default 0.3; 0=no floor)")
+    ap.add_argument("--init_offset_m", type=float, default=0.0,
+                    help="σ of Gaussian init position noise in m (seed 42; 0=GT init)")
+    ap.add_argument("--compass_gain",  type=float, default=1.0,
+                    help="AHRS compass correction strength (0=pure gyro/accel, 1=default)")
     ap.add_argument("--out",         default=None,
                     help="output plot path (default: _out/pipeline_<dataset>.png)")
     args = ap.parse_args()
