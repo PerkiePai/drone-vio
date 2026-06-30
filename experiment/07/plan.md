@@ -25,6 +25,17 @@
 
 **Deferred:** Q6 (homography chain — correct but fragile; add a comment), Q11 (adaptive RANSAC threshold — carry to Exp07)
 
+**Incorporated from Exp06 (`experiment/06/result.md`, completed in parallel):** Exp06 found
+`--min_inliers=15` (the prior pipeline.py default) lets low-confidence DSMAC fixes corrupt the
+trajectory — worst case 93.2 m RMSE, *worse* than flow-odom-only (81.7 m). `--min_inliers=30` is the
+validated structural fix (cuts worst-case RMSE to 38.8 m) and was applied as the new pipeline.py
+default before this plan's runs. For the SIFT extractor used throughout Exp07, Exp06 measured only a
+small regression at `reject=30`/`inl=30` (17.0 m vs 15.1 m RMSE at the old `inl=15`/`reject=150`
+baseline) and never isolated `inl=30` at the production `reject=150` default — so **the baseline
+RMSE/final-error numbers below are not carried over from Exp05/Exp06 and must be re-measured fresh**
+under `min_inliers=30` as part of Sweep A's offset=0 / gain=1.0 run (Experiment 1) before being used
+as a comparison anchor for the rest of this plan's sweeps.
+
 ---
 
 ## Engineering Fixes
@@ -177,13 +188,13 @@ done
 
 | Dataset | Init offset (m) | Compass gain | RMSE | Final error | Fix rate | Notes |
 |---------|----------------|-------------|------|-------------|---------|-------|
-| Long | 0 | 1.0 | 15.1 m (expected) | 0.8 m | ~427/427 | baseline |
+| Long | 0 | 1.0 | TBD (re-baseline, `min_inliers=30`) | | | baseline — old `inl=15` figure was 15.1 m/0.8 m, not assumed valid post-Exp06 |
 | Long | 25 | 1.0 | | | | |
 | Long | 50 | 1.0 | | | | |
 | Long | 100 | 1.0 | | | | |
 | Long | 0 | 0.0 | | | | |
 | Long | 0 | 0.5 | | | | |
-| Short | 0 | 1.0 | 11.6 m | 5.0 m | | baseline |
+| Short | 0 | 1.0 | TBD (re-baseline, `min_inliers=30`) | | | baseline — old `inl=15` figure was 11.6 m/5.0 m, not assumed valid post-Exp06 |
 | Short | 50 | 1.0 | | | | |
 | Short | 100 | 1.0 | | | | |
 | Short | 0 | 0.0 | | | | |
@@ -288,7 +299,7 @@ conda run -n drone python pipeline.py \
 
 | flow_std_coeff | blend_floor | Short RMSE | Short final | Notes |
 |---------------|------------|------------|-------------|-------|
-| 0.05 | 0.3 | 7.7 m (expected) | 1.2 m | current default |
+| 0.05 | 0.3 | TBD (re-baseline, `min_inliers=30`) | | current default — old `inl=15` figure was 7.7 m/1.2 m |
 | 0.01 | 0.3 | | | low flow uncertainty → high blend |
 | 0.02 | 0.3 | | | |
 | 0.10 | 0.3 | | | |

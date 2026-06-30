@@ -506,8 +506,10 @@ def main():
                     help="fix blend: pos += blend*(fix - pos) (default 0.8)")
     ap.add_argument("--skip_below",  type=float, default=13.0,
                     help="skip DSMAC until estimated drift exceeds this (m)")
-    ap.add_argument("--min_inliers", type=int,   default=15,
-                    help="min RANSAC inliers to accept a DSMAC fix")
+    ap.add_argument("--min_inliers", type=int,   default=30,
+                    help="min RANSAC inliers to accept a DSMAC fix "
+                         "(default 30 — Exp06: inl=15 lets low-confidence fixes "
+                         "corrupt the trajectory; 30 is the validated floor)")
     ap.add_argument("--autotune",      action="store_true",
                     help="enable Kalman-style blend autotune (default: off)")
     ap.add_argument("--warmup_fixes",  type=int,   default=6,
