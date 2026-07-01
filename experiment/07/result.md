@@ -28,12 +28,19 @@ the default to 30. Re-measured here as the offset=0/gain=1.0 rows of Experiment 
 
 | Dataset | Old baseline (`inl=15`) | New baseline (`inl=30`) | Delta |
 |---------|--------------------------|--------------------------|-------|
-| Long | 15.1 m / 0.8 m | 15.7 m / 4.6 m | +4% RMSE, final error up (both still excellent) |
+| Long | 15.1 m / 0.8 m | 15.7 m / 4.6 m | +4% RMSE (negligible); **final error 5.75× (0.8→4.6 m)** |
 | Short | 11.6 m / 5.0 m | 11.5 m / 5.0 m | ~unchanged |
 
-**Finding:** the `min_inliers=30` fix does not meaningfully regress SIFT (as Exp06 predicted).
-Both re-baselined numbers are used as the comparison anchors for the rest of this document, not
-the old `inl=15` figures.
+**Finding:** the `min_inliers=30` fix does not meaningfully regress SIFT on the *primary* metric
+(RMSE +4% long, flat short), as Exp06 predicted. The long-dataset **final error does regress 5.75×**
+(0.8→4.6 m) — the same shape of move that, under a naive reading, was used against `blend_floor=0.1`.
+The acceptance is nonetheless correct under **ADR-0001** (RMSE primary; final error is a guardrail):
+(a) `min_inliers=30` is not justified on an RMSE *win* at all — it is an Exp06 **worst-case-corruption
+safety fix** (cuts worst-case RMSE 93→39 m) accepted at essentially flat nominal RMSE; and (b) 4.6 m
+final error on a 22 km flight is well within guardrail tolerance and breaches no pre-stated threshold.
+So the fix stays — but stated honestly as "negligible nominal-RMSE cost + a small (guardrail-tolerant)
+final-error regression, adopted for worst-case safety," not "both still excellent." Both re-baselined
+numbers are used as the comparison anchors for the rest of this document, not the old `inl=15` figures.
 
 ---
 
@@ -92,33 +99,92 @@ hardware sizing, not a bug.
 | 100 m (108.4 m actual) | 1.0 | 37.3 m | 5.0 m | 81/81 (100%) |
 | 100 m (108.4 m actual) | 0.0 | 37.2 m | 5.2 m | 81/81 (100%) |
 
+### Sweep C′ — realized-magnitude seed sweep (short dataset, compass_gain=1.0)
+
+The Sweep A/B/C offsets above all used a single RNG seed (42). Because
+`np.random.default_rng(seed).normal(0, σ, size=2)` returns the *same* standardized 2-vector for a
+given seed, every offset in Sweeps A–C points in the **identical compass bearing** — the ratios
+give it away (27.1/25 = 54.2/50 = 108.4/100 = 1.084×). That tests one bearing at three magnitudes,
+not "init error" in general. Worse, `normal(0, σ, size=2)` makes the *realized 2-D magnitude*
+Rayleigh-distributed, so a nominal "σ=50" is not "a 50 m error" — across seeds it spans 15–179 m
+here. A `--init_seed` CLI arg was added to `pipeline.py`; the σ=50 and σ=100 runs were repeated at
+seeds 1/7/13 and pooled with the seed-42 rows above. **The correct x-axis is realized init
+magnitude, not nominal σ:**
+
+| Realized init (m) | RMSE (m) | Final err (m) | fixes acc/att | source |
+|---|---|---|---|---|
+| 0 (baseline) | 11.5 | 5.0 | 82/82 | Sweep C |
+| 14.9 | 12.5 | 5.0 | 81/81 | σ50 seed7 |
+| 29.9 | 15.0 | 5.0 | 82/82 | σ100 seed7 |
+| 44.6 | 18.5 | 5.0 | 82/82 | σ50 seed1 |
+| 54.2 | 21.1 | 5.0 | 82/82 | σ50 seed42 (orig "50 m") |
+| **~60** | **~23 (2× baseline threshold crossing)** | — | — | interpolated |
+| 89.1 | 31.3 | 5.0 | 82/82 | σ100 seed1 |
+| 108.4 | 37.3 | 5.0 | 81/81 | σ100 seed42 (orig "100 m") |
+| 179.0 | 88.9 | 5.0 | 69/82 | σ50 seed13 |
+| 358.0 | 342.2 | **360.3** | **0/5** | σ100 seed13 |
+
+Two clean thresholds emerge:
+
+- **RMSE-within-2×-baseline ceiling ≈ 60 m realized init** (crossing 23.0 m between 54.2→21.1 and
+  89.1→31.3 m). RMSE grows roughly linearly with realized init up to ~180 m.
+- **Final-position recovery ceiling between 179 and 358 m.** Final error stays 5.0 m — full
+  recovery — for *every* realized init up to 179 m, then collapses to no-recovery at 358 m (final
+  error = init error).
+
+**Mechanism (from the fix-acceptance traces): the recovery ceiling is governed by the `reject`
+gate (150 m), not by flight length.**
+- Realized init ≪ 150 m → the first fix's `d=|fix−prior|` is < 150 → accepted immediately → clean
+  snap-back, low RMSE.
+- Realized init ≈ 150–200 m (the 179 m run) → early fixes are *rejected* (`d≈179 > 150`; log shows
+  0/11 accepted at frame 3000, drift 302 m), and recovery waits until flow-odom noise jitters `d`
+  below 150 (eventually 69/82 accepted). Final position fully recovers, but the delay leaves a large
+  RMSE scar (88.9 m).
+- Realized init ≫ 150 m (the 358 m run) → `d` never drops below 150 *and* the true terrain falls
+  outside the DSMAC search window (only 5/82 attempts even produced a candidate, 0 accepted); the
+  pipeline runs open-loop on flow-odom from the offset start, drift reaches 1920 m, final error =
+  init error.
+
+This makes the recovery ceiling an **actionable knob**: tolerating larger init errors means raising
+`reject` (at the cost of admitting more genuine outliers), not a fixed property of the pipeline.
+
 ### Key findings
 
-1. **DSMAC recovers from bad init trivially, on both datasets.** Even a 108 m init error (6% of
-   the short flight's entire 1.8 km path) only moves long-dataset RMSE from 15.7→18.1 m (2×
-   baseline is 31.4 m — comfortably passes) and leaves final error completely unchanged (4.6 m on
-   long, 5.0–5.2 m on short) because the first DSMAC fix (within ~150 flow-odom steps, well under
-   1 km of flight) snaps the trajectory back. The **required** 50 m test passes cleanly on both
-   datasets (long: 16.4 vs 31.4 m threshold; short: 21.1 vs 23.0 m threshold). At the more extreme
-   100 m stretch test, the *short* dataset's RMSE (37.2–37.3 m) exceeds its 2× threshold (23.0 m) —
-   the short flight's 1.8 km path gives DSMAC fewer opportunities to re-anchor before the flight
-   ends, so very large init errors leave a larger RMSE scar even though the *final* position is
-   still perfectly recovered. This is a real, dataset-length-dependent recovery limit, not a defect.
+1. **DSMAC recovers *final position* from large init errors, but the RMSE and total-recovery
+   ceilings are governed by the `reject` gate (150 m), not flight length.** Characterized properly
+   with the realized-magnitude seed sweep (Sweep C′), the single-seed Sweeps A–C above overstated
+   this: the "required 50 m test passes cleanly (short: 21.1 vs 23.0 m)" was a single middling draw
+   (seed 42, realized 54.2 m). The nominal σ=50 spec actually spans 15–179 m realized across seeds,
+   with RMSE spanning 12.5–88.9 m — one draw (seed 13, realized 179 m) blows past the 23 m threshold
+   at 88.9 m. Pooled against *realized* init magnitude the picture is clean and monotonic: **final
+   position fully recovers (5.0 m) for every realized init up to 179 m; RMSE stays within 2× baseline
+   only up to ~60 m realized;** and there is a hard total-failure ceiling between 179 and 358 m,
+   where the drone never re-anchors and ends its flight at the init error (360 m). The governing
+   mechanism is the `reject` threshold (see Sweep C′), so the "50 m recoverable" claim should be
+   read as "σ=50 usually recovers final position, but its Rayleigh tail (realized > ~150 m) can defeat
+   the reject gate, and RMSE degrades well before that." This is a `reject`-driven recovery limit,
+   not the earlier draft's "dataset-length-dependent" one — the long dataset was never re-run across
+   seeds, so no length claim is supported.
 2. **Compass is catastrophically load-bearing on the long flight, and irrelevant on the short
-   flight.** `compass_gain=0` blows up long-dataset RMSE by **345×** (15.7 m → 5 414 m, final error
-   14.3 km — worse than doing nothing) because 77 minutes gives unconstrained gyro yaw drift enough
-   time to rotate the whole DSMAC search geometry off target (only 134/403 fix opportunities even
-   fire, since `skip_below`/gate logic depends on a sane trajectory). On the 7.5-minute short flight,
+   flight.** `compass_gain=0` causes **unbounded yaw-driven divergence** on the long flight — RMSE
+   runs to ~5 414 m and final error to ~14 km *in this run*, with only 134/403 fix opportunities
+   firing before the search geometry rotates off-map. (The magnitude is **not a stable multiplier**:
+   a diverged run's RMSE depends on where divergence starts and how many fixes fire, so "×baseline"
+   framing is avoided — the point is that it diverges without bound, not that it lands at a
+   reproducible number.) 77 minutes gives unconstrained gyro yaw drift enough time to rotate the
+   whole DSMAC search geometry off target. On the 7.5-minute short flight,
    `compass_gain=0` is statistically indistinguishable from the compass-on baseline (11.2 vs 11.5 m)
    — gyro drift hasn't accumulated enough to matter yet. This matches the existing project finding
    (`attitude-comparison-results` memory: Mahony-only unusable at 53.9% on the 22 km flight) and
    sharpens it: the compass dependency is a function of *flight duration*, not a fixed property of
    the pipeline.
 3. **Headline metrics honesty:** the published "RMSE ~15 m / final ~1 m" headline is **not**
-   dependent on GT init position (DSMAC recovers any tested offset up to 100 m) but **is** entirely
-   dependent on GT-derived compass correction for flights beyond ~10 minutes. A real deployment
-   needs a magnetometer or equivalent yaw reference for any mission longer than the short-dataset
-   scale; GT-quality initial position is not required.
+   dependent on precise GT init position (DSMAC recovers final position from realized init errors up
+   to ~180 m, and keeps RMSE within 2× baseline up to ~60 m realized) but **is** entirely dependent
+   on GT-derived compass correction for flights beyond ~10 minutes. A real deployment needs a
+   magnetometer or equivalent yaw reference for any mission longer than the short-dataset scale; a
+   coarse initial position (say GPS-last-known within a few tens of metres) is sufficient, but a
+   very poor one (> ~150 m, the `reject` gate) will not recover at all.
 
 ---
 
@@ -154,8 +220,25 @@ applied.
 | 0.10 | 7.8 m | 1.4 m |
 | 0.20 | 9.6 m | 4.3 m |
 
-**No coefficient beats the 0.05 default by ≥10% RMSE** (0.01/0.02 tie exactly; 0.10/0.20 are worse).
-**Default retained: `flow_std_coeff=0.05`.**
+**No coefficient beats the 0.05 default by ≥10% RMSE.** But note *why*: 0.01, 0.02 and 0.05 are
+**byte-identical** (7.5 m / 1.2 m), and only 0.10/0.20 differ. That identity is the signature of an
+**inert parameter**, not an optimum. In the blend formula (`pipeline.py:366`)
+
+```python
+flow_std = drift_since * flow_std_coeff
+blend    = flow_std**2 / (flow_std**2 + dsmac_std**2)
+blend    = clip(blend * inlier_conf, blend_floor, 1.0)
+```
+
+a small `coeff` makes `flow_std` small, drives the raw `blend` below `blend_floor`, and it is
+**clamped up to the floor (0.3)** — so every coeff small enough to hit the floor yields the same
+blend and the same RMSE. The blend_floor sweep below *confirms* the clamp is active at coeff=0.05
+(changing the floor moves RMSE, which can only happen if `blend` is sitting on the floor). So
+**`flow_std_coeff=0.05` is the top of a floor-dominated plateau, not a unique optimum**: values
+≤0.05 are identical, >0.05 degrade. **Default retained at 0.05** (safe — it is the plateau top with
+no downside), but the "optimal" framing is wrong. The result holds *at* `blend_floor=0.3`, which Q4
+has since confirmed as the default (see the blend_floor section) — so this sweep is valid in the
+settled regime.
 
 ### blend_floor sweep (short dataset, `flow_std_coeff=0.05` fixed)
 
@@ -168,36 +251,55 @@ applied.
 | 0.5 | 9.5 m | 3.1 m | 82/82 (100%) |
 
 `floor=0.1` beats the 0.3 default by **22.7% RMSE** (5.8 vs 7.5 m) — meets the plan's literal
-`≥10%` threshold. But final error is **7.5× worse** (9.0 vs 1.2 m): a lower floor lets DSMAC fixes
-be down-weighted more when `inlier_conf`/blend say to, which reduces average error but leaves the
-final position less tightly anchored.
+`≥10%` threshold. Under RMSE-as-primary (ADR-0001) this is a **win** on the short dataset. Final
+error is 7.5× worse (9.0 vs 1.2 m) — a lower floor lets DSMAC fixes be down-weighted more when
+`inlier_conf`/blend say to, which reduces average error but leaves the final position less tightly
+anchored — but per ADR-0001 final error is a guardrail, not a swing vote, and no symmetric
+final-error veto threshold was pre-registered in the plan, so it cannot by itself overturn the RMSE
+result here.
 
-### Best-pair validation (long dataset, `flow_std_coeff=0.05, blend_floor=0.1`)
+### Best-pair validation + control (long dataset, `flow_std_coeff=0.05`)
 
 | Config | RMSE | Final error | Fixes acc/att |
 |---|---|---|---|
 | Fixed blend (`--blend 0.8`, non-autotune, baseline) | 15.7 m | 4.6 m | 402/403 (100%) |
-| Autotune, `coeff=0.05, floor=0.1` ("best pair" by short-dataset RMSE) | **16.9 m** | **8.5 m** | 407/407 (100%) |
+| Autotune, `floor=0.3` (**default; control run — apples-to-apples**) | **16.2 m** | **5.0 m** | 408/409 (100%) |
+| Autotune, `floor=0.1` ("best pair" by short-dataset RMSE) | 16.9 m | 8.5 m | 407/407 (100%) |
 
-**The short-dataset "win" for `floor=0.1` does not generalize.** On the long dataset the
-`floor=0.1` autotune configuration is *worse* than the plain fixed-blend baseline on both RMSE
-(16.9 vs 15.7 m) and final error (8.5 vs 4.6 m). (Note: no long-dataset autotune run at the
-*default* `floor=0.3` was performed — the plan only calls for the "best pair" validation — so this
-comparison is against the non-autotune baseline, not an apples-to-apples autotune-vs-autotune
-comparison; flagged as an open item below.)
+**Resolved: `floor=0.1` genuinely does not generalize.** The missing control (autotune at the
+*default* `floor=0.3`) was run to de-confound the earlier autotune-vs-fixed-blend comparison. In the
+proper **autotune-vs-autotune** comparison, `floor=0.3` beats `floor=0.1` on the long flight on both
+metrics (RMSE 16.2 vs 16.9 m; final 5.0 vs 8.5 m). So the long-dataset regression is *not* an
+autotune-mode artifact — the floor value itself is responsible. Two effects, now cleanly separated:
+- **Autotune mode ≈ fixed-blend on long** (16.2 vs 15.7 m — a ~0.5 m cost, roughly on par).
+- **Within autotune, 0.3 > 0.1 on long, but 0.1 > 0.3 on short** — a genuine cross-dataset RMSE
+  conflict: `floor=0.1`'s −23% short win vs `floor=0.3`'s −4% long win.
+
+Under ADR-0001 this is a real judgment call rather than an automatic pick: naive equal dataset
+weighting would favour 0.1 (its short win is larger), but the **76-min / 22 km long flight is the
+deployment-representative case**, short-flight accuracy is already excellent either way, and 0.1
+additionally carries the final-error cost. **Decision: keep `blend_floor=0.3` — now evidence-based
+(it wins the long flight in a fair comparison), not inertia.**
 
 ### Key findings
 
 1. **Q2 (warmup bias):** inconclusive/moot — ratios are noisy in both directions, and the proposed
    cap never engages at the drift magnitudes observed on either dataset. No code change made.
-2. **Q3 (flow_std_coeff):** current default (0.05) is already optimal among tested values. No
-   change.
-3. **Q4 (blend_floor):** `floor=0.1` technically satisfies the plan's literal "≥10% RMSE
-   improvement" criterion on the short dataset, but (a) it trades a 7.5× worse final error for that
-   RMSE gain, and (b) it does not generalize to the long dataset, where it makes both metrics worse
-   than the non-autotune baseline. **Recommendation: keep `blend_floor=0.3` as the default** —
-   the plan's RMSE-only literal criterion is met but is not robust enough to justify a default
-   change given the final-error trade-off and lack of generalization.
+2. **Q3 (flow_std_coeff):** 0.05 is **inert-plateau-top**, not a unique optimum — values ≤0.05 are
+   floor-clamped and byte-identical; only >0.05 changes anything. Default kept at 0.05. The coeff
+   sweep was run at `floor=0.3`, which Q4 has now confirmed as the default, so the sweep is valid in
+   the settled regime — no re-run needed. (Had Q4 chosen 0.1, the sweep would have needed repeating;
+   it did not.)
+3. **Q4 (blend_floor): RESOLVED — keep `blend_floor=0.3`, now evidence-based.** On the short dataset
+   `floor=0.1` is a clean **RMSE win** (−22.7%), which under ADR-0001 (RMSE primary) governs there,
+   and the earlier draft's two rejection arguments were both flawed (final-error veto is
+   inadmissible per ADR-0001; the long-dataset comparison was confounded). The de-confounding control
+   run (long, autotune, `floor=0.3`) settles it: in a fair **autotune-vs-autotune** comparison
+   `floor=0.3` beats `floor=0.1` on the long flight (16.2 vs 16.9 m RMSE; 5.0 vs 8.5 m final). So
+   `floor=0.1`'s short-flight win genuinely does not generalize. The cross-dataset conflict (0.1 wins
+   short by 23%, 0.3 wins long by 4%) is resolved in favour of 0.3 because the long flight is
+   deployment-representative and short-flight accuracy is excellent either way. **Default stays 0.3
+   by evidence.**
 
 ---
 
@@ -230,12 +332,19 @@ rough upper bound, not the typical case for this dataset).
    RMSE degrades 1.85× (11.5→21.3 m) even though every fix is "accepted." This is a more subtle and
    more dangerous failure mode than a low fix rate would be: a silent, biased correction instead of
    an obviously-absent one.
-3. **Q11 (adaptive RANSAC threshold) is resolved as unnecessary, not deferred further.** Since
-   acceptance was never the failure mode (100% pass rate even at ~1.8× median scale error), a
-   tighter or scale-adaptive RANSAC inlier threshold would not catch the baro-fallback degradation —
-   it would need to reject on *position plausibility*, not match-quality, which is a different
-   mechanism entirely (e.g. comparing the fix against the flow-odom prior, which the existing
-   `reject` gate already does, just too loosely to distinguish this case from normal noise).
+3. **Q11 (adaptive RANSAC threshold) is *reframed*, not closed — and the fix-vs-prior reject gate
+   is structurally blind to this failure, not merely too loose.** Acceptance was never the failure
+   mode (100% pass rate even at ~1.8× median scale error), so a tighter/scale-adaptive RANSAC inlier
+   threshold cannot catch the baro-fallback degradation. But neither can the existing `reject` gate,
+   for a stronger reason than "too loose": on the baro fallback the *same* `agl` array scales **both**
+   the DSMAC warp factor `f = (agl/fx)/GSD` (pipeline.py:266) **and** the flow-odom per-point depth
+   `h0 = agl[i−stride]` (pipeline.py:331). So the flow-odom **prior** and the DSMAC **fix** are both
+   biased by the identical wrong altitude — the error is **common-mode**, their difference
+   `d = |fix−prior|` stays small, and no threshold on that difference (RANSAC *or* `reject`) can ever
+   see it. See ADR-0002. The genuine remaining requirement is an **independent** scale/altitude
+   cross-check (e.g. verifying the recovered homography's scale against the expected `f`, or
+   cross-checking baro-AGL against an independent estimate) — one that does *not* draw from the same
+   `agl` input. Q11's RANSAC-threshold form is dead; the independent-scale-check requirement is open.
 
 ---
 
@@ -243,16 +352,16 @@ rough upper bound, not the typical case for this dataset).
 
 | Question | Answer |
 |---|---|
-| Q1 init offset | DSMAC recovers cleanly from ≤100 m init error on both datasets; short-flight RMSE has a length-dependent recovery ceiling above the required 50 m test |
-| Q1 compass | Catastrophic dependency on long flights (345× RMSE blowup at gain=0); negligible on short flights — dependency is duration-driven |
+| Q1 init offset | Characterized vs *realized* (not nominal-σ) init magnitude across seeds: final position fully recovers ≤179 m, RMSE within 2× baseline ≤~60 m, hard total-failure between 179–358 m. Ceiling is set by the `reject` gate (150 m), not flight length. Single-seed sweeps overstated the "50 m clean pass" (σ=50 realized spans 15–179 m) |
+| Q1 compass | Catastrophic dependency on long flights — unbounded divergence at gain=0 (RMSE ~5.4 km / final ~14 km this run, not a stable multiplier); negligible on short flights — dependency is duration-driven |
 | Q2 warmup bias | Noisy, not systematically biased; proposed cap is a no-op at observed drift scales — no change |
-| Q3 flow_std_coeff | 0.05 default confirmed optimal — no change |
-| Q4 blend_floor | 0.1 meets literal RMSE criterion on short dataset only; recommend keeping 0.3 default (final-error trade-off + no long-dataset generalization) |
+| Q3 flow_std_coeff | 0.05 is the top of a floor-clamped inert plateau (≤0.05 byte-identical), not a unique optimum; default kept. Sweep was run at `floor=0.3`, now confirmed as the default by Q4 — valid in the settled regime |
+| Q4 blend_floor | RESOLVED: keep 0.3 (evidence-based). `floor=0.1` wins short (−22.7% RMSE) but the de-confounding control (autotune-vs-autotune, long) shows 0.3 beats 0.1 on the deployment-representative long flight (16.2 vs 16.9 m RMSE; 5.0 vs 8.5 m final) — 0.1 does not generalize |
 | Q5 baro fallback | Predicted <5% fix rate falsified (100% actual); real cost is 1.85× RMSE degradation from biased fix positions, not rejected fixes |
 | Q6 | Comment present in code (verified) |
 | Q8 ortho memory | Short 28 MB, Long 1 151 MB (exceeds 500 MB warning); no OOM |
 | Q9 file handles | No bare `open()` remains (verified) |
-| Q11 adaptive RANSAC threshold | Resolved: not needed — acceptance was never the failure mode |
+| Q11 adaptive RANSAC threshold | Reframed, not closed: RANSAC-threshold form is dead (acceptance was never the failure mode); the `reject` gate is common-mode-blind because prior + fix share `agl` (ADR-0002); an independent scale-consistency check is now the open requirement |
 | Q12 ortho boundary | Window always exactly 2×win × 2×win (verified) |
 | Exp06 `min_inliers=30` | Re-validated: SIFT baselines essentially unchanged on both datasets |
 
@@ -261,21 +370,28 @@ rough upper bound, not the typical case for this dataset).
 ## Conclusions
 
 1. **The pipeline's GT dependency is real but narrow: it's the compass, not the init position.**
-   DSMAC's global re-anchoring makes initial position essentially free to get wrong (recovers from
-   100 m errors), but there is no equivalent recovery mechanism for accumulated yaw drift without a
-   compass — a real deployment absolutely needs a magnetometer (or equivalent heading reference) for
-   any flight longer than ~10 minutes.
-2. **Autotune's current defaults (`flow_std_coeff=0.05`, `blend_floor=0.3`) are already
-   well-tuned; no change is recommended.** The one setting that beats the RMSE-only criterion
-   (`blend_floor=0.1`) fails to generalize to the long dataset and trades away final-position
-   accuracy — a reminder that a single-metric ("≥10% RMSE") pass condition can pick a worse overall
-   config, consistent with Exp06's finding that RMSE and final error can trade off against each
-   other.
+   DSMAC's global re-anchoring recovers final position from realized init errors up to ~180 m and
+   keeps RMSE within 2× baseline up to ~60 m realized — so a coarse initial position is fine, though
+   the recovery ceiling is the `reject` gate (150 m), not unlimited. There is no equivalent recovery
+   mechanism for accumulated yaw drift without a compass — a real deployment absolutely needs a
+   magnetometer (or equivalent heading reference) for any flight longer than ~10 minutes.
+2. **Autotune defaults confirmed — but for the right reasons this time.** `blend_floor=0.3` is
+   kept, now **evidence-based**: the de-confounding control run (long, autotune, `floor=0.3`) shows
+   0.3 beats 0.1 on the deployment-representative long flight (16.2 vs 16.9 m RMSE), so `floor=0.1`'s
+   −23% short-dataset RMSE win genuinely does not generalize. `flow_std_coeff=0.05` is kept as the
+   top of a floor-clamped inert plateau (≤0.05 byte-identical) — valid *at* the confirmed `floor=0.3`
+   regime. The methodological lesson stands regardless: the earlier draft reached the *same* "keep
+   0.3" answer via an inadmissible final-error veto and a confounded comparison — right answer, wrong
+   evidence — which is exactly the trap a stated primary metric (ADR-0001) plus a proper control
+   guards against.
 3. **The baro-fallback failure mode is silent bias, not rejection — worse from a safety
-   standpoint than the plan assumed.** A system relying on "RANSAC will catch it" for wrong-AGL
-   inputs is not protected; SIFT's scale invariance, a feature everywhere else in this project,
-   is a liability here. This closes Q11: an adaptive RANSAC threshold would not help, since
-   rejection was never the failure mode.
+   standpoint than the plan assumed, and *no existing gate can catch it.*** A system relying on
+   "RANSAC will catch it" for wrong-AGL inputs is not protected; SIFT's scale invariance, a feature
+   everywhere else in this project, is a liability here. This does **not** close Q11 — it reframes
+   it: the fix-vs-prior `reject` gate is *structurally* blind to this failure because the same `agl`
+   array scales both the flow-odom prior and the DSMAC fix (common-mode error; ADR-0002), so no
+   threshold on their difference can detect it. The open requirement is an **independent**
+   scale/altitude consistency check that does not share the `agl` input.
 4. **All engineering fixes (Q6, Q8, Q9, Q12) verified in place; the Exp06 `min_inliers=30` default
    change re-validated as safe for SIFT on both datasets** (within ~4% of the old `inl=15`
    baseline).
@@ -284,19 +400,25 @@ rough upper bound, not the typical case for this dataset).
 
 ## Open items carried forward
 
-- **No long-dataset autotune run at the default `floor=0.3`/`coeff=0.05` was performed** — the
-  best-pair validation (Exp2) compares `floor=0.1` against the non-autotune fixed-blend baseline,
-  not against autotune-at-default. A follow-up should run that missing control to isolate whether
-  `floor=0.1`'s long-dataset regression is from the floor change specifically or from autotune
-  mode in general on this dataset.
-- **Short-flight, large-init-offset RMSE ceiling** (Q1, finding 1): 100 m init error exceeds the 2×
-  RMSE threshold on the short (1.8 km) flight even though final position fully recovers. Worth
-  characterizing the minimum flight distance needed for full RMSE recovery vs a given init error,
-  if a real deployment might have a coarse/erroneous initial position.
+- ~~No long-dataset autotune run at the default `floor=0.3`~~ **— DONE (this session).** The control
+  was run: autotune-`floor=0.3`-long = 16.2 m RMSE / 5.0 m final, vs autotune-`floor=0.1`-long =
+  16.9 m / 8.5 m. Resolves Q4 (keep 0.3) and, because the coeff sweep was run at `floor=0.3`, also
+  closes the Q3↔Q4 coupling — no coeff re-run needed. Remaining autotune follow-up: none from Exp07.
+- **Init-error recovery is `reject`-gate-bound; long-dataset seed sweep not run** (Q1, Sweep C′):
+  the recovery ceiling (~150 m realized) tracks the 150 m `reject` threshold on the *short* dataset.
+  The long dataset was only run at a single seed, so the `reject`-gate mechanism is not yet confirmed
+  there, and the earlier "dataset-length-dependent ceiling" framing is withdrawn as unsupported. A
+  follow-up should (a) sweep `reject` to confirm it moves the recovery ceiling, and (b) repeat the
+  realized-magnitude sweep on the long dataset.
 - **Baro-fallback position bias is uncharacterized in direction/magnitude vs terrain profile** —
   only RMSE and the aggregate baro/AGL ratio were measured; a follow-up could check whether the
   bias correlates with terrain relief (steep vs flat baro-AGL divergence) to judge risk for a real
   no-rangefinder deployment.
+- **Q11 reframed — independent scale-consistency check (open requirement).** The RANSAC-threshold
+  form of Q11 is dead, and the fix-vs-prior `reject` gate is common-mode-blind (ADR-0002), so a real
+  no-rangefinder deployment has *no* guard against silent AGL-scale bias. A follow-up should design
+  an independent check (recovered-homography scale vs expected `f`, or an independent AGL estimate)
+  and measure whether it flags the baro-fallback run without false-positiving on the AGL baseline.
 - **Ortho RAM (Q8) at 1.15 GB for the long dataset** is fine on this 188 GB host but should be
   sized against actual target hardware (e.g. onboard companion computer) before deployment
   planning assumes zoom-19 tiles are free.

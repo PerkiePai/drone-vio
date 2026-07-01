@@ -292,9 +292,10 @@ def run_pipeline(args):
     # In deployment, replace with first GPS fix or known takeoff coordinates.
     pos         = recs[0]["gt"][:2].copy()
     if args.init_offset_m > 0:
-        _rng = np.random.default_rng(42)
+        _rng = np.random.default_rng(args.init_seed)
         pos  = pos + _rng.normal(0, args.init_offset_m, size=2)
-        print(f"  init offset applied: {np.linalg.norm(pos - recs[0]['gt'][:2]):.1f} m")
+        print(f"  init offset applied: {np.linalg.norm(pos - recs[0]['gt'][:2]):.1f} m "
+              f"(seed {args.init_seed})")
     fused       = [pos.copy()]
     gt_list     = [recs[0]["gt"][:2]]
     ts_list     = [recs[0]["ts"]]
@@ -519,7 +520,9 @@ def main():
     ap.add_argument("--blend_floor",   type=float, default=0.3,
                     help="min blend in autotune mode (default 0.3; 0=no floor)")
     ap.add_argument("--init_offset_m", type=float, default=0.0,
-                    help="σ of Gaussian init position noise in m (seed 42; 0=GT init)")
+                    help="σ of Gaussian init position noise in m (0=GT init)")
+    ap.add_argument("--init_seed",     type=int, default=42,
+                    help="RNG seed for init offset direction (vary to test bearing-sensitivity)")
     ap.add_argument("--compass_gain",  type=float, default=1.0,
                     help="AHRS compass correction strength (0=pure gyro/accel, 1=default)")
     ap.add_argument("--out",         default=None,
