@@ -1,0 +1,51 @@
+
+=== GPS-denied pipeline: isaac-sim-20260625 ===
+  67861 frames loaded
+  AGL: median 79 m  [1, 126] m
+  computing AHRS+compass attitude ...
+  estimated ortho RAM: 1151 MB  (34048×11264 px)
+  WARNING: ortho > 500 MB — consider reducing zoom (current z=19)
+  ortho 133×44 tiles = 34048×11264px (5851/5852 placed)
+  SIFT+LightGlue loaded on cuda
+  13572 flow-odom steps — DSMAC every 30 steps  (skip_below=13.0 m, reject=150.0 m) ...
+  warmup 1/6: d(fix-prior)=14.8 m  d(flow-GT)=1.6 m  ratio=9.21
+  warmup 2/6: d(fix-prior)=7.0 m  d(flow-GT)=13.4 m  ratio=0.52
+  warmup 3/6: d(fix-prior)=7.4 m  d(flow-GT)=20.6 m  ratio=0.36
+  warmup 4/6: d(fix-prior)=2.3 m  d(flow-GT)=14.4 m  ratio=0.16
+  warmup 5/6: d(fix-prior)=0.4 m  d(flow-GT)=13.4 m  ratio=0.03
+  warmup 6/6: d(fix-prior)=0.9 m  d(flow-GT)=14.5 m  ratio=0.06
+    frame  3000/67861  err     11 m  drift     0 m  fixes 18/18
+    frame  6000/67861  err     15 m  drift     0 m  fixes 38/38
+    frame  9000/67861  err     16 m  drift     0 m  fixes 58/58
+    frame 12000/67861  err     16 m  drift     0 m  fixes 78/78
+    frame 15000/67861  err     17 m  drift     0 m  fixes 98/98
+    frame 18000/67861  err     17 m  drift     0 m  fixes 117/117
+    frame 21000/67861  err     18 m  drift     0 m  fixes 137/137
+    frame 24000/67861  err     18 m  drift     0 m  fixes 146/146
+    frame 27000/67861  err     19 m  drift     0 m  fixes 161/161
+    frame 30000/67861  err     24 m  drift     0 m  fixes 181/181
+    frame 33000/67861  err     25 m  drift     0 m  fixes 201/201
+    frame 36000/67861  err     15 m  drift     0 m  fixes 220/220
+    frame 39000/67861  err     25 m  drift   401 m  fixes 230/230
+    frame 42000/67861  err     10 m  drift     0 m  fixes 243/243
+    frame 45000/67861  err     10 m  drift     0 m  fixes 262/262
+    frame 48000/67861  err     18 m  drift     0 m  fixes 281/281
+    frame 51000/67861  err     17 m  drift     0 m  fixes 301/301
+    frame 54000/67861  err     18 m  drift     0 m  fixes 321/321
+    frame 57000/67861  err     15 m  drift     0 m  fixes 341/341
+    frame 60000/67861  err     13 m  drift     0 m  fixes 360/360
+    frame 63000/67861  err     15 m  drift     0 m  fixes 380/380
+    frame 66000/67861  err     14 m  drift     0 m  fixes 400/400
+
+──────────────────────────────────────────────────────────
+  PIPELINE RESULTS — isaac-sim-20260625
+──────────────────────────────────────────────────────────
+  Path length         : 22407 m
+  Duration            : 76.9 min
+  DSMAC fixes att/acc : 407 / 407  (100% accepted)
+  Fused RMSE          : 16.9 m  (0.08% of path)
+  Final error         : 8.5 m  (0.04%)
+  Mean LK inliers     : 578 / step
+──────────────────────────────────────────────────────────
+
+saved experiment/07/isaac-sim-20260625/long_best_autotune.png

@@ -1,0 +1,26 @@
+
+=== GPS-denied pipeline: isaac-sim-20260624_2337 ===
+  14070 frames loaded
+  WARNING: agl_cache.npz not found — using baro (scale error ~5× at altitude)
+  computing AHRS+compass attitude ...
+  estimated ortho RAM: 28 MB  (3072×3072 px)
+  ortho 12×12 tiles = 3072×3072px (144/144 placed)
+  SIFT+LightGlue loaded on cuda
+  2813 flow-odom steps — DSMAC every 30 steps  (skip_below=13.0 m, reject=150.0 m) ...
+    frame  3000/14070  err     17 m  drift     0 m  fixes 10/10
+    frame  6000/14070  err     19 m  drift     0 m  fixes 26/26
+    frame  9000/14070  err     16 m  drift     0 m  fixes 41/41
+    frame 12000/14070  err      1 m  drift     0 m  fixes 60/60
+
+──────────────────────────────────────────────────────────
+  PIPELINE RESULTS — isaac-sim-20260624_2337
+──────────────────────────────────────────────────────────
+  Path length         : 1773 m
+  Duration            : 7.5 min
+  DSMAC fixes att/acc : 73 / 73  (100% accepted)
+  Fused RMSE          : 21.3 m  (1.20% of path)
+  Final error         : 6.9 m  (0.39%)
+  Mean LK inliers     : 576 / step
+──────────────────────────────────────────────────────────
+
+saved experiment/07/isaac-sim-20260624_2337/short_baro_fallback.png
