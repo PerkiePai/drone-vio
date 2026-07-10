@@ -252,6 +252,85 @@ def compute_true_agl(recs, K, R_CtoI, scale, W=10, step=4, min_pts=20):
     return np.interp(np.arange(len(recs)), idxs, agls)
 
 
+def build_dem_raster(recs, K, R_CtoI, scale, cell_m=5.0, W=10, step=4, min_pts=200):
+    """Offline, whole-flight DEM stand-in for terrain-relief correlation (Exp10).
+    Same triangulation primitive as compute_true_agl (GT-pose triangulation — the
+    idealized-truth role that function already plays for AGL) but keeps each
+    point's full (X, Y, Z) instead of collapsing to a median Z per window, then
+    grids the accumulated point cloud into a 2D elevation raster. This DEM is
+    built once, offline, from the whole flight -- it plays the role of a
+    pre-loaded reference map (like DSMAC's Esri ortho tiles), NOT a live
+    per-step estimate, so correlating a live/online relief signal against it is
+    not the self-triangulation circularity Exp06 already ruled out.
+
+    Camera centers (recs[i]["gt"]) are real GT position (poses.csv x/y/z,
+    always logged). Camera attitude (recs[i]["R_wb"]) is whatever pipeline.py
+    has already populated it with by the time this is called -- for the
+    Exp10 target datasets (real magnetometer, no per-frame GT quaternion in
+    poses.csv) that is the AHRS+compass estimate from compute_ahrs_attitude,
+    not literal GT attitude. This is a corrected premise vs an earlier draft
+    of this experiment's design: ray direction carries ~2 deg bounded AHRS
+    tilt error (this project's own measured figure), not zero. It is still
+    not the Exp06 self-triangulation circularity, because AHRS attitude comes
+    from independent physical sensors (gyro+accel+compass), not from the live
+    flow-odom position trace that this DEM is later correlated against.
+
+    Returns a dict: raster (ny,nx) float32 grid of elevation (NaN outside the
+    triangulated points' convex hull -- deliberately NOT filled, so a
+    correlation search step must fail closed rather than match against
+    extrapolated terrain it never actually observed), e0/n0 (grid origin,
+    metres), cell_m, nx, ny, n_points (diagnostic)."""
+    Ks = K.copy(); Ks[:2, :] *= scale
+    Kinv = np.linalg.inv(Ks)
+    lk = dict(winSize=(21, 21), maxLevel=3,
+              criteria=(cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 30, 0.01))
+    feat = dict(maxCorners=400, qualityLevel=0.01, minDistance=10, blockSize=7)
+
+    def load(p):
+        im = cv2.imread(p, cv2.IMREAD_GRAYSCALE)
+        return cv2.resize(im, None, fx=scale, fy=scale,
+                           interpolation=cv2.INTER_AREA) if scale != 1 else im
+
+    pts_e, pts_n, pts_z = [], [], []
+    for i in range(0, len(recs) - W, step):
+        r0, r1 = recs[i], recs[i + W]
+        im0, im1 = load(r0["img"]), load(r1["img"])
+        p0 = cv2.goodFeaturesToTrack(im0, mask=None, **feat)
+        if p0 is None:
+            continue
+        p1, stt, _ = cv2.calcOpticalFlowPyrLK(im0, im1, p0, None, **lk)
+        stt = stt.reshape(-1).astype(bool)
+        p0g, p1g = p0.reshape(-1, 2)[stt], p1.reshape(-1, 2)[stt]
+        C0, C1 = r0["gt"], r1["gt"]
+        R0, R1 = r0["R_wb"] @ R_CtoI, r1["R_wb"] @ R_CtoI
+        for (u0, v0), (u1, v1) in zip(p0g, p1g):
+            d0 = R0 @ (Kinv @ np.array([u0, v0, 1.0])); d0 /= np.linalg.norm(d0)
+            d1 = R1 @ (Kinv @ np.array([u1, v1, 1.0])); d1 /= np.linalg.norm(d1)
+            X = _triangulate_midpoint(C0, d0, C1, d1)
+            if X is not None and X[2] < C0[2] - 1.0:      # ground below camera
+                pts_e.append(X[0]); pts_n.append(X[1]); pts_z.append(X[2])
+
+    pts_e, pts_n, pts_z = np.array(pts_e), np.array(pts_n), np.array(pts_z)
+    if len(pts_e) < min_pts:
+        raise RuntimeError(
+            f"build_dem_raster: only {len(pts_e)} triangulated ground points "
+            f"(need >= {min_pts}) -- too sparse to build a usable DEM raster")
+
+    e_min, e_max = pts_e.min(), pts_e.max()
+    n_min, n_max = pts_n.min(), pts_n.max()
+    nx = max(2, int((e_max - e_min) / cell_m) + 2)
+    ny = max(2, int((n_max - n_min) / cell_m) + 2)
+    grid_e = e_min + cell_m * np.arange(nx)
+    grid_n = n_min + cell_m * np.arange(ny)
+    GE, GN = np.meshgrid(grid_e, grid_n)
+
+    from scipy.interpolate import griddata
+    raster = griddata((pts_e, pts_n), pts_z, (GE, GN), method="linear")
+
+    return dict(raster=raster.astype(np.float32), e0=float(e_min), n0=float(n_min),
+                cell_m=float(cell_m), nx=nx, ny=ny, n_points=int(len(pts_e)))
+
+
 def run(d, scale, max_frames, min_track, depth_source="baro", stride=1, fb_check=True,
         agl_arr=None, attitude_R=None, skip_frames=0):
     K, R_CtoI, recs = load_dataset(d)
