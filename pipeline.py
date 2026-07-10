@@ -357,6 +357,31 @@ def run_pipeline(args):
     for i in range(N):
         recs[i]["R_wb"] = att_R[i]
 
+    # DEM raster + relief signal (Exp10) -- only built if actually needed.
+    # Placed after attitude is populated: build_dem_raster needs recs[i]["R_wb"]
+    # for ray direction, which is None past frame 0 until this point (these
+    # datasets have no per-frame GT quaternion in poses.csv, only AHRS+compass).
+    dem = None
+    terrain_elev = None
+    if args.relief_gate == "on":
+        dem_path = os.path.join(D, "dem_cache.npz")
+        if os.path.exists(dem_path):
+            z = np.load(dem_path)
+            dem = dict(raster=z["raster"], e0=float(z["e0"]), n0=float(z["n0"]),
+                       cell_m=float(z["cell_m"]), nx=int(z["nx"]), ny=int(z["ny"]))
+            print(f"  DEM raster: {dem['nx']}x{dem['ny']} cells @ {dem['cell_m']} m "
+                  f"(cached)")
+        else:
+            print("  building offline DEM raster (whole-flight GT-position + "
+                  "AHRS-attitude triangulation) ...")
+            dem = fo.build_dem_raster(recs, K, R_CtoI, args.scale)
+            np.savez(dem_path, raster=dem["raster"], e0=dem["e0"], n0=dem["n0"],
+                     cell_m=dem["cell_m"], nx=dem["nx"], ny=dem["ny"])
+            print(f"  DEM raster: {dem['nx']}x{dem['ny']} cells @ {dem['cell_m']} m, "
+                  f"{dem['n_points']} triangulated points")
+        baro_h = np.array([r["h"] for r in recs])
+        terrain_elev = baro_h - agl
+
     # satellite ortho
     _ensure_geo_georef(D)
     with open(os.path.join(D, "geo.csv")) as fh:
