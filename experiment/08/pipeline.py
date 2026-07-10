@@ -160,62 +160,6 @@ def warp_north_up(im, yaw_deg, f):
     return cv2.warpAffine(im, M, (nw, nh)), M @ np.array([w / 2, h / 2, 1.0])
 
 
-# ─── canopy / repetitive-terrain gate ────────────────────────────────────────
-# Exp08 found forest canopy gives DSMAC ~0% clear rate regardless of AGL or zoom
-# (absence of correspondable structure between sim-rendered canopy and real Esri
-# imagery, not a weak-matcher problem -- SIFT already finds 1000+ keypoints on
-# both sides). This gate does NOT fix that; it only skips the SIFT+LightGlue
-# call on windows already known to be hopeless, saving GPU time. Thresholds
-# calibrated in experiment/09/validate_gate.py against Exp08's 164 known-outcome
-# samples -- see experiment/09/result.md for the calibration and its caveats.
-GREEN_DOMINANCE_THRESH = 22.09  # Exp09 validate_gate.py: lowest 95th-pctile sweep
-                                # step with precision=1.0 and zero false positives
-                                # on dataset 1 (the only dataset with real fixes to
-                                # lose); recall=0.38 of all failed samples.
-REPETITIVENESS_THRESH  = 0.56   # same calibration; precision=1.0, recall=0.13 alone,
-                                # lifts color_texture's combined recall to 0.47.
-
-
-def green_dominance(window_bgr):
-    """Mean(G-R) over a color ortho crop. Canopy/forest renders strongly
-    green-dominant in real Esri imagery vs. farmland/urban."""
-    b, g, r = cv2.split(window_bgr.astype(np.float32))
-    return float((g - r).mean())
-
-
-def repetitiveness(window_gray, patch_frac=0.3, exclusion_mult=1.0):
-    """Height of the strongest secondary autocorrelation peak: a central
-    sub-patch matched against the full window via normalized cross-
-    correlation, masking a patch-sized box around the trivial true peak
-    (the patch always matches itself there with score ~1.0). High = the
-    window contains another region nearly identical to its own centre
-    (periodic/repetitive terrain); low = locally unique."""
-    h, w = window_gray.shape
-    ph, pw = int(h * patch_frac), int(w * patch_frac)
-    cy0, cx0 = (h - ph) // 2, (w - pw) // 2
-    patch = window_gray[cy0:cy0 + ph, cx0:cx0 + pw]
-    corr = cv2.matchTemplate(window_gray, patch, cv2.TM_CCOEFF_NORMED)
-    ey, ex = int(ph * exclusion_mult), int(pw * exclusion_mult)
-    y0e, y1e = max(0, cy0 - ey), min(corr.shape[0], cy0 + ey)
-    x0e, x1e = max(0, cx0 - ex), min(corr.shape[1], cx0 + ex)
-    masked = corr.copy()
-    masked[y0e:y1e, x0e:x1e] = -1.0
-    return float(masked.max())
-
-
-def is_canopy_nonviable(window_bgr, mode):
-    """True if this DSMAC search window should be skipped before SIFT+LightGlue.
-    mode: 'color' (green-dominance only) or 'color_texture' (also gated on
-    repetitiveness). Thresholds calibrated in experiment/09/validate_gate.py."""
-    if green_dominance(window_bgr) >= GREEN_DOMINANCE_THRESH:
-        return True
-    if mode == "color_texture":
-        window_gray = cv2.cvtColor(window_bgr, cv2.COLOR_BGR2GRAY)
-        if repetitiveness(window_gray) >= REPETITIVENESS_THRESH:
-            return True
-    return False
-
-
 # ─── LK optical-flow odometry ────────────────────────────────────────────────
 
 def _detect(gray):
@@ -316,9 +260,6 @@ def run_pipeline(args):
     # dataset
     K, R_CtoI, recs = fo.load_dataset(D)
     N = len(recs)
-    if args.max_frames:
-        recs = recs[:args.max_frames]
-        N = len(recs)
     print(f"  {N} frames loaded")
 
     # AGL (rangefinder): real lidar.csv → triangulated cache → baro fallback
@@ -414,11 +355,6 @@ def run_pipeline(args):
         win = orthog[y0:y0 + 2 * args.win, x0:x0 + 2 * args.win]
         if win.shape[0] < 50 or win.shape[1] < 50:
             return None
-        if args.canopy_gate != "off":
-            win_bgr = ortho[y0:y0 + 2 * args.win, x0:x0 + 2 * args.win]
-            if is_canopy_nonviable(win_bgr, args.canopy_gate):
-                skipped_canopy[0] += 1
-                return None
         # Hm maps q-keypoints → win-keypoints.  cpt is the drone image centre in
         # q-space (output of warp_north_up).  Hm @ cpt → fix in win-space → add
         # (x0, y0) for ortho-pixel coords → px_to_enu.
@@ -455,7 +391,6 @@ def run_pipeline(args):
     warmup_jumps = []   # |fix - pos| residuals collected at blend=1.0
     dsmac_std    = None # frozen after warmup; None means still warming up
     prev        = _load(recs[0]["img"])
-    skipped_canopy = [0]   # mutable counter, closed over by _dsmac_fix
 
     total_steps = (N - 1) // args.stride
     print(f"  {total_steps} flow-odom steps — "
@@ -538,13 +473,12 @@ def run_pipeline(args):
             np.array(gt_list),
             (np.array(ts_list) - ts_list[0]) / 1e9,
             fixes,
-            n_used,
-            skipped_canopy[0])
+            n_used)
 
 
 # ─── output ───────────────────────────────────────────────────────────────────
 
-def report_and_plot(fused, GT, tvec, fixes, n_used, skipped_canopy, args):
+def report_and_plot(fused, GT, tvec, fixes, n_used, args):
     err      = np.linalg.norm(fused - GT, axis=1)
     path_len = float(np.sum(np.linalg.norm(np.diff(GT, axis=0), axis=1)))
     rmse     = float(np.sqrt(np.mean(err ** 2)))
@@ -557,7 +491,6 @@ def report_and_plot(fused, GT, tvec, fixes, n_used, skipped_canopy, args):
     print(f"  Duration            : {tvec[-1] / 60:.1f} min")
     print(f"  DSMAC fixes att/acc : {len(fixes)} / {nacc}  "
           f"({100 * nacc / max(len(fixes), 1):.0f}% accepted)")
-    print(f"  Canopy-gate skips   : {skipped_canopy}  (mode={args.canopy_gate})")
     print(f"  Fused RMSE          : {rmse:.1f} m  "
           f"({100 * rmse / path_len:.2f}% of path)")
     print(f"  Final error         : {err[-1]:.1f} m  "
@@ -609,7 +542,6 @@ def report_and_plot(fused, GT, tvec, fixes, n_used, skipped_canopy, args):
         f"{'Path length':<22} {path_len:.0f} m\n"
         f"{'Duration':<22} {tvec[-1]/60:.1f} min\n"
         f"{'DSMAC fixes':<22} {nacc}/{len(fixes)} accepted\n"
-        f"{'Canopy-gate skips':<22} {skipped_canopy} ({args.canopy_gate})\n"
         f"{'─'*44}\n"
         f"{'Fused RMSE':<22} {rmse:.1f} m ({100*rmse/path_len:.2f}%)\n"
         f"{'Final error':<22} {err[-1]:.1f} m ({100*err[-1]/path_len:.2f}%)\n"
@@ -664,15 +596,6 @@ def main():
                     help="min RANSAC inliers to accept a DSMAC fix "
                          "(default 30 — Exp06: inl=15 lets low-confidence fixes "
                          "corrupt the trajectory; 30 is the validated floor)")
-    ap.add_argument("--canopy_gate", choices=["off", "color", "color_texture"],
-                    default="off",
-                    help="skip SIFT+LightGlue on windows flagged non-viable before "
-                         "matching (Exp09) -- latency optimization only, does NOT "
-                         "improve fix rate/accuracy on genuinely hopeless terrain "
-                         "(default off)")
-    ap.add_argument("--max_frames", type=int, default=0,
-                    help="truncate to the first N loaded frames (0=all); for fast "
-                         "smoke tests, mirrors flow_odometry.py's existing flag")
     ap.add_argument("--autotune",      action="store_true",
                     help="enable Kalman-style blend autotune (default: off)")
     ap.add_argument("--warmup_fixes",  type=int,   default=6,
@@ -697,8 +620,8 @@ def main():
         os.makedirs(out_dir, exist_ok=True)
         args.out = os.path.join(out_dir, f"pipeline_{ds}.png")
 
-    fused, GT, tvec, fixes, n_used, skipped_canopy = run_pipeline(args)
-    report_and_plot(fused, GT, tvec, fixes, n_used, skipped_canopy, args)
+    fused, GT, tvec, fixes, n_used = run_pipeline(args)
+    report_and_plot(fused, GT, tvec, fixes, n_used, args)
 
 
 if __name__ == "__main__":
