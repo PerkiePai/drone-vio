@@ -524,7 +524,8 @@ def run_pipeline(args):
     gt_list     = [recs[0]["gt"][:2]]
     ts_list     = [recs[0]["ts"]]
     n_used      = []
-    fixes       = []   # (step, eE, eN, accepted, dist_m, inliers)
+    fixes       = []   # (step, eE, eN, accepted, dist_m, score, source)
+    frame_idx_list = []
     drift_since = 0.0
     step        = 0
     warmup_jumps = []   # |fix - pos| residuals collected at blend=1.0
@@ -562,12 +563,26 @@ def run_pipeline(args):
         drift_since += float(np.linalg.norm(dC))
         step        += 1
 
-        # DSMAC: fire every fix_every steps, once drift exceeds skip_below
+        # DSMAC / relief: fire every fix_every steps, once drift exceeds skip_below
         skip = dsmac_std if (args.autotune and dsmac_std is not None) else args.skip_below
         if step % args.fix_every == 0 and drift_since >= skip:
-            fix = _dsmac_fix(i, pos)
+            fix, source = None, None
+            nonviable = False
+            if args.canopy_gate != "off":
+                cx, cy = enu_to_px(pos[0], pos[1])
+                x0 = int(np.clip(cx - args.win, 0, meta["W"] - 2 * args.win))
+                y0 = int(np.clip(cy - args.win, 0, meta["H"] - 2 * args.win))
+                probe = ortho[y0:y0 + 2 * args.win, x0:x0 + 2 * args.win]
+                nonviable = probe.shape[0] >= 50 and probe.shape[1] >= 50 \
+                    and is_canopy_nonviable(probe, args.canopy_gate)
+            if not nonviable:
+                fix = _dsmac_fix(i, pos)
+                source = "dsmac"
+            elif args.relief_gate == "on":
+                fix = _relief_fix(fused, frame_idx_list)
+                source = "relief"
             if fix is not None:
-                eE, eN, inl = fix
+                eE, eN, score = fix
                 d   = math.hypot(eE - pos[0], eN - pos[1])
                 if args.autotune and dsmac_std is not None:
                     reject = drift_since + 3 * dsmac_std
@@ -586,7 +601,8 @@ def run_pipeline(args):
                         else:
                             if dsmac_std is None:
                                 dsmac_std = np.std(warmup_jumps) if len(warmup_jumps) > 1 else d
-                            inlier_conf = min(1.0, inl / 50)
+                            inlier_conf = (min(1.0, score / 50) if source == "dsmac"
+                                           else float(np.clip(score, 0.0, 1.0)))
                             flow_std    = drift_since * args.flow_std_coeff
                             blend       = (flow_std ** 2) / (flow_std ** 2 + dsmac_std ** 2)
                             blend       = float(np.clip(blend * inlier_conf, args.blend_floor, 1.0))
@@ -595,12 +611,13 @@ def run_pipeline(args):
                     pos = np.array([pos[0] + blend * (eE - pos[0]),
                                     pos[1] + blend * (eN - pos[1])])
                     drift_since = 0.0
-                fixes.append((step, eE, eN, acc, d, inl))
+                fixes.append((step, eE, eN, acc, d, score, source))
 
         fused.append(pos.copy())
         gt_list.append(r1["gt"][:2])
         ts_list.append(r1["ts"])
         n_used.append(used)
+        frame_idx_list.append(i)
         prev = cur
 
         if i % 3000 == 0:
@@ -630,8 +647,12 @@ def report_and_plot(fused, GT, tvec, fixes, n_used, skipped_canopy, args):
     print(f"{'─'*58}")
     print(f"  Path length         : {path_len:.0f} m")
     print(f"  Duration            : {tvec[-1] / 60:.1f} min")
-    print(f"  DSMAC fixes att/acc : {len(fixes)} / {nacc}  "
+    print(f"  Fix attempts att/acc: {len(fixes)} / {nacc}  "
           f"({100 * nacc / max(len(fixes), 1):.0f}% accepted)")
+    for src in ("dsmac", "relief"):
+        att = [f for f in fixes if f[6] == src]
+        acc = [f for f in att if f[3]]
+        print(f"    {src:<8}: {len(acc)}/{len(att)} accepted/attempted")
     print(f"  Canopy-gate skips   : {skipped_canopy}  (mode={args.canopy_gate})")
     print(f"  Fused RMSE          : {rmse:.1f} m  "
           f"({100 * rmse / path_len:.2f}% of path)")
