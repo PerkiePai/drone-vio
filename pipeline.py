@@ -461,6 +461,56 @@ def run_pipeline(args):
         except Exception:
             return None
 
+    def _relief_fix(fused_list, frame_idx_list):
+        """TERCOM-style relief-correlation fix: slide the last `--relief_window`
+        steps' dead-reckoned position trace over a 2D grid of candidate offsets
+        in the DEM raster; affine-fit the sensed terrain_elev shape against the
+        DEM values at each candidate (unknown scale/bias -- only shape is
+        trusted); accept the best-scoring candidate if both signals show real
+        spread and the correlation clears the threshold. Returns (eE, eN, corr)
+        or None."""
+        W = args.relief_window
+        if len(fused_list) < W:
+            return None
+        path   = np.array(fused_list[-W:])                       # (W,2) ENU
+        idxs   = frame_idx_list[-W:]
+        sensed = np.array([terrain_elev[fi] for fi in idxs])
+        if np.std(sensed) < args.relief_min_sensed_std:
+            return None    # sensed profile itself is flat -- no shape to match
+
+        raster = dem["raster"]; e0, n0, cell_m = dem["e0"], dem["n0"], dem["cell_m"]
+        ny, nx = raster.shape
+
+        def sample(cand_path):
+            gx = (cand_path[:, 0] - e0) / cell_m
+            gy = (cand_path[:, 1] - n0) / cell_m
+            if gx.min() < 0 or gy.min() < 0 or gx.max() >= nx - 1 or gy.max() >= ny - 1:
+                return None
+            x0 = np.floor(gx).astype(int); y0 = np.floor(gy).astype(int)
+            fx = gx - x0; fy = gy - y0
+            v00 = raster[y0,     x0    ]; v10 = raster[y0,     x0 + 1]
+            v01 = raster[y0 + 1, x0    ]; v11 = raster[y0 + 1, x0 + 1]
+            vals = (v00 * (1 - fx) * (1 - fy) + v10 * fx * (1 - fy)
+                    + v01 * (1 - fx) * fy + v11 * fx * fy)
+            return None if np.isnan(vals).any() else vals
+
+        best = None
+        offsets = np.arange(-args.relief_win, args.relief_win + 1e-6, dem["cell_m"])
+        for dE in offsets:
+            for dN in offsets:
+                dem_vals = sample(path + np.array([dE, dN]))
+                if dem_vals is None or np.std(dem_vals) < args.relief_min_relief_std:
+                    continue
+                corr = np.corrcoef(sensed, dem_vals)[0, 1]
+                if np.isfinite(corr) and (best is None or corr > best[2]):
+                    best = (dE, dN, corr)
+
+        if best is None or best[2] < args.relief_min_corr:
+            return None
+        dE, dN, corr = best
+        eE, eN = path[-1, 0] + dE, path[-1, 1] + dN
+        return eE, eN, float(corr)
+
     # ── integrated flow-odom + DSMAC loop ────────────────────────────────────
     # Initial position: GT nadir point at takeoff.
     # In deployment, replace with first GPS fix or known takeoff coordinates.
@@ -695,6 +745,24 @@ def main():
                          "matching (Exp09) -- latency optimization only, does NOT "
                          "improve fix rate/accuracy on genuinely hopeless terrain "
                          "(default off)")
+    ap.add_argument("--relief_gate", choices=["off", "on"], default="off",
+                    help="try a terrain-relief/DEM correlation fix (Exp10) when the "
+                         "canopy gate flags DSMAC hopeless -- additive, DSMAC-only "
+                         "behaviour is unchanged when this is off (default off)")
+    ap.add_argument("--relief_window", type=int, default=30,
+                    help="number of recent flow-odom steps used as the sensed "
+                         "relief profile (default 30, matches --fix_every)")
+    ap.add_argument("--relief_win", type=float, default=150.0,
+                    help="relief-fix search half-window in metres (default 150, "
+                         "matches the default --reject distance)")
+    ap.add_argument("--relief_min_corr", type=float, default=0.6,
+                    help="min Pearson correlation to accept a relief fix (default 0.6)")
+    ap.add_argument("--relief_min_relief_std", type=float, default=3.0,
+                    help="min DEM elevation std (m) within a candidate window to "
+                         "bother scoring it -- skips flat terrain (default 3.0)")
+    ap.add_argument("--relief_min_sensed_std", type=float, default=1.0,
+                    help="min sensed terrain_elev std (m) to attempt a relief fix "
+                         "at all -- skips a flat sensed profile (default 1.0)")
     ap.add_argument("--max_frames", type=int, default=0,
                     help="truncate to the first N loaded frames (0=all); for fast "
                          "smoke tests, mirrors flow_odometry.py's existing flag")
